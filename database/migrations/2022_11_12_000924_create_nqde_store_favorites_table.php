@@ -1,0 +1,44 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+class CreateNqdeStoreFavoritesTable extends Migration
+{
+    /**
+     * Run the migrations.
+     *
+     * @return void
+     */
+    public function up()
+    {
+        Schema::create('nqde_store_favorites', function (Blueprint $table) {
+
+                            /*
+                              app\delivery             app\product
+                              15                       13
+                              app\vendor               app\client
+                              62                       56
+                            */
+
+            $table->id();
+            $table->string('type')->nullable();
+            $table->unsignedBigInteger('type_id')->nullable();
+            $table->string('user_type')->nullable();
+            $table->unsignedBigInteger('user_id')->nullable();
+            $table->timestamps();
+
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     *
+     * @return void
+     */
+    public function down()
+    {
+        Schema::dropIfExists('nqde_store_favorites');
+    }
+}
