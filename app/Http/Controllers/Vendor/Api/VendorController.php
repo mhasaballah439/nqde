@@ -14,10 +14,15 @@ class VendorController extends Controller
     use ApiTrait;
 
     var $lang_code;
+    var $vendor_id;
 
     public function __construct()
     {
         $this->lang_code = \request()->get('lang') ? \request()->get('lang') : get_default_languages();
+         if (auth()->guard('vendor')->check())
+             $vendor_id = vendor()->id;
+        elseif (auth()->guard('vendor_employee')->check())
+            $vendor_id = vendor_employee()->vendor->id;
     }
 
     public function vendorData()
@@ -33,7 +38,7 @@ class VendorController extends Controller
         $is_delete = $request->get('is_delete');
         $created_at = $request->get('created_at');
 
-        $delivery_areas = DeliveryArea::where('vendor_id', vendor()->id);
+        $delivery_areas = DeliveryArea::where('vendor_id', $this->vendor_id);
         if ($name)
             $delivery_areas = $delivery_areas->where('name_ar', 'LIKE', '%' . $name . '%')->orWhere('name_en', 'LIKE', '%' . $name . '%');
         if ($number)
@@ -66,7 +71,7 @@ class VendorController extends Controller
         $number = $request->get('number');
         $created_at = $request->get('created_at');
 
-        $delivery_areas = DeliveryArea::where('vendor_id', vendor()->id);
+        $delivery_areas = DeliveryArea::where('vendor_id', $this->vendor_id);
         if ($name)
             $delivery_areas = $delivery_areas->where('name_ar', 'LIKE', '%' . $name . '%')->orWhere('name_en', 'LIKE', '%' . $name . '%');
         if ($number)
@@ -90,7 +95,7 @@ class VendorController extends Controller
     }
     public function generateDeliveryAreaCode(){
         $last_item_id = 0;
-        $last_item = DeliveryArea::where('vendor_id',vendor()->id)->withTrashed()->orderBy('id','DESC')->first();
+        $last_item = DeliveryArea::where('vendor_id',$this->vendor_id)->withTrashed()->orderBy('id','DESC')->first();
         if($last_item){
             $num = explode('-',$last_item->number);
             $last_item_id = $num[1];
@@ -111,14 +116,14 @@ class VendorController extends Controller
             return $this->errorResponse($validator->errors()->first(), 400);
 
         $last_item_id = 0;
-        $last_item = DeliveryArea::where('vendor_id',vendor()->id)->withTrashed()->orderBy('id','DESC')->first();
+        $last_item = DeliveryArea::where('vendor_id',$this->vendor_id)->withTrashed()->orderBy('id','DESC')->first();
         if($last_item){
             $num = explode('-',$last_item->number);
             $last_item_id = $num[1];
         }
 
         $delivery = new DeliveryArea();
-        $delivery->vendor_id = vendor()->id;
+        $delivery->vendor_id = $this->vendor_id;
         $delivery->name_ar = $request->get('name_ar');
         $delivery->name_en = $request->get('name_en');
         $delivery->number = 'DA-'.($last_item_id + 1);
@@ -132,7 +137,7 @@ class VendorController extends Controller
     public function updateDeliveryArea(Request $request)
     {
 
-        $delivery = DeliveryArea::where('vendor_id', vendor()->id)->where('id', $request->get('delivery_id'))->first();
+        $delivery = DeliveryArea::where('vendor_id', $this->vendor_id)->where('id', $request->get('delivery_id'))->first();
         if (!$delivery)
             return $this->errorResponse(__('msg.delivery_areas_not_found', [], $this->lang_code), 400);
 
@@ -151,7 +156,7 @@ class VendorController extends Controller
     }
 
     public function deleteDeliveryArea(Request $request){
-        $delivery = DeliveryArea::where('vendor_id', vendor()->id)->where('id', $request->get('delivery_id'))->first();
+        $delivery = DeliveryArea::where('vendor_id', $this->vendor_id)->where('id', $request->get('delivery_id'))->first();
         if (!$delivery)
             return $this->errorResponse(__('msg.delivery_areas_not_found', [], $this->lang_code), 400);
 

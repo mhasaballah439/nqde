@@ -16,4 +16,11 @@ class EmployeesRool extends Model
     public function employees(){
         return $this->hasMany(VendorEmployee::class,'role_id');
     }
+
+    public function name($lang){
+        if ($lang == 'ar')
+            return $this->name_ar;
+        else
+            return $this->name_en;
+    }
 }

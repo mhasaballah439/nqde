@@ -12,15 +12,19 @@ class ProductsController extends Controller
 {
     use ApiTrait;
     var $lang_code;
-
+    var $vendor_id;
     public function __construct()
     {
         $this->lang_code = \request()->get('lang') ? \request()->get('lang') : get_default_languages();
+        if (auth()->guard('vendor')->check())
+            $vendor_id = vendor()->id;
+        elseif (auth()->guard('vendor_employee')->check())
+            $vendor_id = vendor_employee()->vendor->id;
     }
     ################### categories area #####################
     public function allCategories(Request $request)
     {
-        $categories = ProductCategory::where('vendor_id',vendor()->id)->Active();
+        $categories = ProductCategory::where('vendor_id',$this->vendor_id)->Active();
         $filter_name = $request->get('filter_name');
         $filter_is_delete = $request->get('is_delete');
         $filter_operation_number = $request->get('operation_number');
@@ -51,7 +55,7 @@ class ProductsController extends Controller
 
     public function generateCategoryCode(){
          $last_item_id = 0;
-        $last_item = ProductCategory::where('vendor_id',vendor()->id)->withTrashed()->orderBy('id','DESC')->first();
+        $last_item = ProductCategory::where('vendor_id',$this->vendor_id)->withTrashed()->orderBy('id','DESC')->first();
          if($last_item){
              $num = explode('-',$last_item->operation_number);
              $last_item_id = $num[1];
@@ -64,7 +68,7 @@ class ProductsController extends Controller
     }
     public function trashedCategories(Request $request)
     {
-        $categories = ProductCategory::where('vendor_id',vendor()->id)->Active();
+        $categories = ProductCategory::where('vendor_id',$this->vendor_id)->Active();
         $filter_name = $request->get('filter_name');
         $filter_operation_number = $request->get('operation_number');
         $filter_created_at = $request->get('created_at');
@@ -99,13 +103,13 @@ class ProductsController extends Controller
             return $this->errorResponse($validator->errors()->first(), 400);
 
         $last_item_id = 0;
-        $last_item = ProductCategory::where('vendor_id',vendor()->id)->withTrashed()->orderBy('id','DESC')->first();
+        $last_item = ProductCategory::where('vendor_id',$this->vendor_id)->withTrashed()->orderBy('id','DESC')->first();
         if($last_item){
             $num = explode('-',$last_item->operation_number);
             $last_item_id = $num[1];
         }
         $category = new ProductCategory();
-        $category->vendor_id = vendor()->id;
+        $category->vendor_id = $this->vendor_id;
         $category->name_ar = $request->get('name_ar');
         $category->name_en = $request->get('name_en');
         $category->status = $request->get('status');
@@ -118,7 +122,7 @@ class ProductsController extends Controller
     public function updateCategory(Request $request)
     {
 
-        $category = ProductCategory::where('id', $request->get('category_id'))->where('vendor_id', vendor()->id)->first();
+        $category = ProductCategory::where('id', $request->get('category_id'))->where('vendor_id', $this->vendor_id)->first();
         if (!$category)
             return $this->errorResponse(__('msg.cat_not_found',[],$this->lang_code),400);
 
@@ -133,7 +137,7 @@ class ProductsController extends Controller
 
     public function deleteCategory(Request $request)
     {
-        $category = ProductCategory::where('id', $request->get('category_id'))->where('vendor_id',vendor()->id)->first();
+        $category = ProductCategory::where('id', $request->get('category_id'))->where('vendor_id',$this->vendor_id)->first();
         if (!$category)
             return $this->errorResponse(__('msg.cat_not_found',[],$this->lang_code),400);
 

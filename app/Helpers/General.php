@@ -64,6 +64,7 @@ function vendor_data(){
             'block_reason' => auth()->guard('vendor')->user()->block_reason,
             'is_take_free_plan' => auth()->guard('vendor')->user()->is_take_free_plan == 1 ? 1 : 0,
             'is_active_plan' => auth()->guard('vendor')->user()->is_active_plan == 1 ? 1 : 0,
+            'active_plan' => auth()->guard('vendor')->user()->active_plan  ? auth()->guard('vendor')->user()->active_plan : null,
         ];
     }else{
         $employee_data = auth()->guard('vendor_employee')->user();
@@ -92,6 +93,8 @@ function vendor_data(){
             'has_device_block' => '',
             'block_title' => '',
             'block_reason' => '',
+            'active_plan' => $employee_data->vendor->active_plan  ? $employee_data->vendor->active_plan : null,
+
         ];
     }
 

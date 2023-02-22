@@ -13,6 +13,7 @@ use App\Models\EmployeeTags;
 use App\Models\Permitions;
 use App\Models\Vendor;
 use App\Models\VendorEmployee;
+use App\Models\VendorReason;
 use App\Traits\ApiTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,9 +26,14 @@ class AdminstarionController extends Controller
 
     var $lang_code;
 
+    var $vendor_id;
     public function __construct()
     {
         $this->lang_code = \request()->get('lang') ? \request()->get('lang') : get_default_languages();
+        if (auth()->guard('vendor')->check())
+            $vendor_id = vendor()->id;
+        elseif (auth()->guard('vendor_employee')->check())
+            $vendor_id = vendor_employee()->vendor->id;
     }
     /**
      * Store a new user.
@@ -45,7 +51,9 @@ class AdminstarionController extends Controller
         $delivery_area = $request->get('delivery_area');
         $created_at = $request->get('created_at');
 
-        $branches = Branch::where('vendor_id', vendor()->id);
+        $branches = Branch::where('vendor_id', $this->vendor_id)->where('is_payment',1)->orWhere(function ($q){
+            $q->where('vendor_id', $this->vendor_id)->where('is_free',1);
+        });
         if ($name)
             $branches = $branches->where('name_ar', 'LIKE', '%' . $name . '%')->orWhere('name_en', 'LIKE', '%' . $name . '%');
         if ($code)
@@ -94,7 +102,7 @@ class AdminstarionController extends Controller
     public function generateBranchCode()
     {
         $last_item_id = 0;
-        $last_item = Branch::where('vendor_id',vendor()->id)->withTrashed()->orderBy('id', 'DESC')->first();
+        $last_item = Branch::where('vendor_id',$this->vendor_id)->withTrashed()->orderBy('id', 'DESC')->first();
         if($last_item){
             $num = explode('-',$last_item->code);
             $last_item_id = $num[1];
@@ -108,47 +116,38 @@ class AdminstarionController extends Controller
     public function createBranch(Request $request)
     {
 
-        $validator = Validator::make($request->all(), [
-            'name_ar' => 'required',
-        ]);
-
-        if ($validator->fails())
-            return $this->errorResponse($validator->errors()->first(), 400);
-
         $last_item_id = 0;
-        $last_item = Branch::where('vendor_id',vendor()->id)->withTrashed()->orderBy('id', 'DESC')->first();
+        $last_item = Branch::where('vendor_id',$this->vendor_id)->withTrashed()->orderBy('id', 'DESC')->first();
         if($last_item){
             $num = explode('-',$last_item->code);
             $last_item_id = $num[1];
         }
-        $branch = new Branch();
-        $branch->vendor_id = vendor()->id;
-        $branch->name_ar = $request->get('name_ar');
-        $branch->name_en = $request->get('name_en');
-        $branch->code = 'B-' . str_pad($last_item_id + 1, 2, "0", STR_PAD_LEFT);
-        $branch->tax_groups = $request->get('tax_groups');
-        $branch->tax_number = $request->get('tax_number');
-        $branch->tax_registration_name = $request->get('tax_registration_name');
-        $branch->mobile = $request->get('mobile');
-        $branch->lat = $request->get('lat');
-        $branch->long = $request->get('long');
-        $branch->up_invoices = $request->get('up_invoices');
-        $branch->down_invoices = $request->get('down_invoices');
-        $branch->address = $request->get('address');
-        $branch->status = $request->get('status');
-        $branch->receive_order_from_api = $request->get('receive_order_from_api');
-        $branch->start_work_time = $request->get('start_work_time');
-        $branch->end_work_time = $request->get('end_work_time');
-        $branch->end_stock_date = $request->get('end_stock_date');
-        $branch->save();
 
+        $directData = $this->myfatorah_payment($request,(float)vendor()->active_plan->branch_price);
+
+        if (isset($directData->Status) && $directData->Status == 'SUCCESS') {
+            for ($i = 1 ; $i<= $request->num_branches ; $i++) {
+                $branch = new Branch();
+                $branch->vendor_id = $this->vendor_id;
+                $branch->code = 'B-' . str_pad($last_item_id + $i, 2, "0", STR_PAD_LEFT);
+                $branch->name_ar = 'فرع '.$i;
+                $branch->name_en = 'Branch '.$i;
+                $branch->mobile = vendor()->mobile;
+                $branch->status = 1;
+                $branch->is_payment = 1;
+                $branch->payment = json_encode($directData);
+                $branch->save();
+            }
         $msg = __('msg.branch_created_success', [], $this->lang_code);
         return $this->successResponse($msg, 200);
+        }else{
+            return $directData;
+        }
     }
 
     public function updateBranch(Request $request)
     {
-        $branch = Branch::where('vendor_id', vendor()->id)->where('id', $request->get('branch_id'))->first();
+        $branch = Branch::where('vendor_id', $this->vendor_id)->where('id', $request->get('branch_id'))->first();
         if (!$branch)
             return $this->errorResponse(__('msg.branch_not_found', [], $this->lang_code), 400);
 
@@ -201,7 +200,7 @@ class AdminstarionController extends Controller
 
     public function deleteBranch(Request $request)
     {
-        $branch = Branch::where('vendor_id', vendor()->id)->where('id', $request->get('branch_id'))->first();
+        $branch = Branch::where('vendor_id', $this->vendor_id)->where('id', $request->get('branch_id'))->first();
         if (!$branch)
             return $this->errorResponse(__('msg.branch_not_found', [], $this->lang_code), 400);
         $branch->delete();
@@ -212,7 +211,7 @@ class AdminstarionController extends Controller
 
     public function branchDetails(Request $request)
     {
-        $branch = Branch::where('vendor_id', vendor()->id)->where('id', $request->get('branch_id'))->first();
+        $branch = Branch::where('vendor_id', $this->vendor_id)->where('id', $request->get('branch_id'))->first();
         if (!$branch)
             return $this->errorResponse(__('msg.branch_not_found', [], $this->lang_code), 400);
 
@@ -340,7 +339,7 @@ class AdminstarionController extends Controller
         $rool_name = $request->get('rool_name');
         $created_at = $request->get('created_at');
 
-        $employees = VendorEmployee::where('vendor_id', vendor()->id);
+        $employees = VendorEmployee::where('vendor_id', $this->vendor_id);
         if ($name)
             $employees = $employees->where('name', 'LIKE', '%' . $name . '%');
         if ($email)
@@ -359,7 +358,7 @@ class AdminstarionController extends Controller
             });
         if ($access_admin_panel == 1)
             $employees = $employees->whereHas('rool', function ($q) {
-                $q->whereNotNull('permissions');
+                $q->whereNotIn('permissions',['cashier_application']);
             });
         if ($login_code)
             $employees = $employees->where('active_code ', 'LIKE', '%' . $login_code . '%');
@@ -373,19 +372,22 @@ class AdminstarionController extends Controller
                     $q->where('name', 'LIKE', '%' . $branch . '%');
                 });
         }
-        if ($is_deleted == 1)
+        if ($is_deleted == 0)
+            $employees = $employees->whereNull('deleted_at');
+        else
             $employees = $employees->withTrashed();
 
         $employees = $employees->orderBy('id', 'DESC')->get();
 
         $data = $employees->map(function ($employee) {
-            $access_apps = $employee->rool()->where('permissions', 'LIKE', '%cashier_application%')->first();
+            $access_apps = $employee->rool()->whereIn('permissions',['cashier_application'])->first();
+            $access_admin_panel = $employee->rool()->whereNotIn('permissions',['cashier_application'])->first();
             return [
                 'id' => $employee->id,
                 'name' => $employee->name,
                 'access_adminstration_manage_apps' => $access_apps ? 1 : 0,
-                'access_admin_panel' => isset($employee->rool) && $employee->rool->permissions != null ? 1 : 0,
-                'rool_name' => isset($employee->rool) && $employee->rool->name ? $employee->rool->name : '',
+                'access_admin_panel' => $access_admin_panel ? 1 : 0,
+                'rool_name' => isset($employee->rool) && $employee->rool->name($this->lang_code) ? $employee->rool->name($this->lang_code) : '',
                 'status' => $employee->status
             ];
         });
@@ -409,7 +411,7 @@ class AdminstarionController extends Controller
         $rool_name = $request->get('rool_name');
         $created_at = $request->get('created_at');
 
-        $employees = VendorEmployee::where('vendor_id', vendor()->id);
+        $employees = VendorEmployee::where('vendor_id', $this->vendor_id);
         if ($name)
             $employees = $employees->where('name', 'LIKE', '%' . $name . '%');
         if ($email)
@@ -454,7 +456,7 @@ class AdminstarionController extends Controller
                 'status' => $employee->status,
                 'access_adminstration_manage_apps' => $access_apps ? 1 : 0,
                 'access_admin_panel' => isset($employee->rool) && $employee->rool->permissions != null ? 1 : 0,
-                'rool_name' => isset($employee->rool) && $employee->rool->name ? $employee->rool->name : '',
+                'rool_name' => isset($employee->rool) && $employee->rool->name($this->lang_code) ? $employee->rool->name($this->lang_code) : '',
             ];
         });
 
@@ -465,7 +467,7 @@ class AdminstarionController extends Controller
 
     public function employeesAccessApps()
     {
-        $employees = VendorEmployee::where('vendor_id', vendor()->id)->whereHas('rool', function ($q) {
+        $employees = VendorEmployee::where('vendor_id', $this->vendor_id)->whereHas('rool', function ($q) {
             $q->whereIn('permissions',['cashier_application']);
         })->orderBy('id', 'DESC')->get();
         $data = $employees->map(function ($employee) {
@@ -474,7 +476,7 @@ class AdminstarionController extends Controller
                 'name' => $employee->name,
                 'access_adminstration_manage_apps' => 1,
                 'access_admin_panel' => isset($employee->rool) && $employee->rool->permissions != null ? 1 : 0,
-                'rool_name' => isset($employee->rool) && $employee->rool->name ? $employee->rool->name : '',
+                'rool_name' => isset($employee->rool) && $employee->rool->name($this->lang_code) ? $employee->rool->name($this->lang_code) : '',
                 'status' => $employee->status
             ];
         });
@@ -486,7 +488,7 @@ class AdminstarionController extends Controller
 
     public function employeesAccessAdminPanel()
     {
-        $employees = VendorEmployee::where('vendor_id', vendor()->id)->whereHas('rool', function ($q) {
+        $employees = VendorEmployee::where('vendor_id', $this->vendor_id)->whereHas('rool', function ($q) {
             $q->whereNotNull('permissions');
         })->orderBy('id', 'DESC')->get();
         $data = $employees->map(function ($employee) {
@@ -496,7 +498,7 @@ class AdminstarionController extends Controller
                 'name' => $employee->name,
                 'access_adminstration_manage_apps' => $access_apps ? 1 : 0,
                 'access_admin_panel' => 1,
-                'rool_name' => isset($employee->rool) && $employee->rool->name ? $employee->rool->name : '',
+                'rool_name' => isset($employee->rool) && $employee->rool->name($this->lang_code) ? $employee->rool->name($this->lang_code) : '',
                 'status' => $employee->status
             ];
         });
@@ -508,7 +510,7 @@ class AdminstarionController extends Controller
 
     public function employeeDetails(Request $request)
     {
-        $employee = VendorEmployee::where('vendor_id', vendor()->id)
+        $employee = VendorEmployee::where('vendor_id', $this->vendor_id)
             ->where('id', $request->get('employee_id'))
             ->with('branches', 'tags', 'rool','vendor')->first();
         $msg = __('msg.employees_get_success', [], $this->lang_code);
@@ -535,8 +537,8 @@ class AdminstarionController extends Controller
             return $this->errorResponse(__('msg.emails_is_already_taken_in_vendor'), 400);
 
         $employee = new VendorEmployee();
-        $employee->vendor_id = vendor()->id;
-        $employee->add_by_name = vendor()->name;
+        $employee->vendor_id = $this->vendor_id;
+        $employee->add_by_name = vendor()->first_name.' '.vendor()->family_name;
         $employee->name = $request->get('name');
         $employee->email = $request->get('email');
         $employee->mobile = $request->get('mobile');
@@ -571,11 +573,11 @@ class AdminstarionController extends Controller
     public function editEmployee(Request $request)
     {
 
-        $employee = VendorEmployee::where('vendor_id', vendor()->id)->where('id',$request->employee_id)->first();
+        $employee = VendorEmployee::where('vendor_id', $this->vendor_id)->where('id',$request->employee_id)->first();
 
         if (!$employee)
             return $this->errorResponse(__('msg.employees_not_found', [], $this->lang_code), 400);
-        $employee->add_by_name = vendor()->name;
+        $employee->add_by_name = vendor()->first_name.' '.vendor()->family_name;
         if ($employee->name)
             $employee->name = $request->get('name');
         if ($employee->email)
@@ -599,7 +601,7 @@ class AdminstarionController extends Controller
     }
 
     public function deleteEmployee(Request $request){
-        $employee = DB::table('vendor_employees')->where('vendor_id', vendor()->id)->where('id', $request->get('employee_id'))->first();
+        $employee = DB::table('vendor_employees')->where('vendor_id', $this->vendor_id)->where('id', $request->get('employee_id'))->first();
         if (!$employee)
             return $this->errorResponse(__('msg.employees_not_found', [], $this->lang_code), 400);
 
@@ -611,7 +613,7 @@ class AdminstarionController extends Controller
     }
     public function changeEmployeeStatus(Request $request)
     {
-         VendorEmployee::where('vendor_id', vendor()->id)
+         VendorEmployee::where('vendor_id', $this->vendor_id)
             ->where('id', $request->get('employee_id'))->update(['status' => $request->status]);
 
 
@@ -622,13 +624,13 @@ class AdminstarionController extends Controller
 
     public function changeEmployeePassword(Request $request)
     {
-        $employee = DB::table('vendor_employees')->where('vendor_id', vendor()->id)->where('id', $request->get('employee_id'))->first();
+        $employee = DB::table('vendor_employees')->where('vendor_id', $this->vendor_id)->where('id', $request->get('employee_id'))->first();
         if (!$employee)
             return $this->errorResponse(__('msg.employees_not_found', [], $this->lang_code), 400);
 
         if (!$request->get('password'))
             return $this->errorResponse(__('msg.password_fild_required', [], $this->lang_code), 400);
-        VendorEmployee::where('vendor_id', vendor()->id)
+        VendorEmployee::where('vendor_id', $this->vendor_id)
             ->where('id', $request->get('employee_id'))->update(['password' => bcrypt($request->password)]);
 
         $msg = __('msg.status_updated_success', [], $this->lang_code);
@@ -638,14 +640,22 @@ class AdminstarionController extends Controller
 
     public function addEmployeeTag(Request $request)
     {
-        $emp_tag = EmployeeTags::where('employee_id', $request->get('employee_id'))
-            ->where('tag_id', $request->get('tag_id'))->first();
-        if ($emp_tag)
-            return $this->errorResponse(__('msg.tag_is_already_add_employee', [], $this->lang_code), 400);
-        $emp_tag = new EmployeeTags();
-        $emp_tag->employee_id = $request->get('employee_id');
-        $emp_tag->tag_id = $request->get('tag_id');
-        $emp_tag->save();
+        if ($request->tags){
+            $tags = json_decode($request->tags);
+            if (count($tags) > 0) {
+                foreach ($tags as $tag) {
+                    $emp_tag = EmployeeTags::where('employee_id', $request->employee_id)
+                        ->where('tag_id', $tag)->first();
+                    if ($emp_tag)
+                        return $this->errorResponse(__('msg.tag_is_already_add_employee', [], $this->lang_code), 400);
+                    $emp_tag = new EmployeeTags();
+                    $emp_tag->employee_id = $request->employee_id;
+                    $emp_tag->tag_id = $tag;
+                    $emp_tag->save();
+
+                }
+            }
+        }
 
         $msg = __('msg.tag_add_success', [], $this->lang_code);
 
@@ -716,7 +726,7 @@ class AdminstarionController extends Controller
     ######################### rols ############################
     public function getRools()
     {
-        $rools = EmployeesRool::where('vendor_id', vendor()->id)->orderBy('id', 'DESC')->get();
+        $rools = EmployeesRool::where('vendor_id', $this->vendor_id)->orderBy('id', 'DESC')->get();
         $data = $rools->map(function ($rol) {
             return [
                 'id' => $rol->id,
@@ -741,7 +751,7 @@ class AdminstarionController extends Controller
             return $this->errorResponse($validator->errors()->first(), 400);
 
         $rool = new EmployeesRool();
-        $rool->vendor_id = vendor()->id;
+        $rool->vendor_id = $this->vendor_id;
         $rool->name_ar = $request->get('name_ar');
         $rool->name_en = $request->get('name_en');
         $rool->permissions = $request->get('permissions');
@@ -753,7 +763,7 @@ class AdminstarionController extends Controller
 
     public function updateRools(Request $request)
     {
-        $rool = EmployeesRool::where('vendor_id', vendor()->id)->where('id', $request->get('role_id'))->first();
+        $rool = EmployeesRool::where('vendor_id', $this->vendor_id)->where('id', $request->get('role_id'))->first();
         if (!$rool)
             return $this->errorResponse(__('msg.rols_not_found', [], $this->lang_code), 400);
 
@@ -771,7 +781,7 @@ class AdminstarionController extends Controller
 
     public function roolDetails(Request $request)
     {
-        $rool = EmployeesRool::where('vendor_id', vendor()->id)->where('id', $request->get('role_id'))->first();
+        $rool = EmployeesRool::where('vendor_id', $this->vendor_id)->where('id', $request->get('role_id'))->first();
         if (!$rool)
             return $this->errorResponse(__('msg.rols_not_found', [], $this->lang_code), 400);
 
@@ -782,7 +792,7 @@ class AdminstarionController extends Controller
 
     public function deleteRools(Request $request)
     {
-        $rool = EmployeesRool::where('vendor_id', vendor()->id)->where('id', $request->get('role_id'))->first();
+        $rool = EmployeesRool::where('vendor_id', $this->vendor_id)->where('id', $request->get('role_id'))->first();
         if (!$rool)
             return $this->errorResponse(__('msg.rols_not_found', [], $this->lang_code), 400);
 
@@ -791,6 +801,68 @@ class AdminstarionController extends Controller
 
         return $this->successResponse($msg, 200);
     }
+############################ reason #####################################
+    public function vendorReasons(){
+        $data = [
+            'cancel_return' => $this->reason_type(1),
+            'modify_qty' => $this->reason_type(2),
+            'fund_operations' => $this->reason_type(3),
+            'expenses' => $this->reason_type(4),
+        ];
+        $msg = __('msg.reasons_get_success', [], $this->lang_code);
+        return $this->dataResponse($msg,$data,200);
+    }
 
+    public function createReason(Request $request){
+        $validator = Validator::make($request->all(), [
+            'name_ar' => 'required',
+            'name_en' => 'required',
+            'reason_type' => 'required',
+        ]);
 
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $reason = new VendorReason();
+        $reason->vendor_id = $this->vendor_id;
+        $reason->name_ar = $request->name_ar;
+        $reason->name_en = $request->name_en;
+        $reason->reason_type_id = $request->reason_type;
+        $reason->save();
+
+        $msg = __('msg.reason_created_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function updateReason(Request $request){
+        $reason = VendorReason::where('vendor_id',$this->vendor_id)->where('id',$request->reason_id)->first();
+        if (!$reason)
+            return $this->errorResponse(__('msg.reason_not_found', [], $this->lang_code), 200);
+        if ($request->name_ar)
+        $reason->name_ar = $request->name_ar;
+        if ($request->name_en)
+        $reason->name_en = $request->name_en;
+        if ($request->reason_type)
+        $reason->reason_type_id = $request->reason_type;
+        $reason->save();
+
+        $msg = __('msg.reason_updated_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    private function reason_type($type){
+        $reasons = VendorReason::where('vendor_id',$this->vendor_id)->where('reason_type_id',$type)->get();
+        $data = $reasons->map(function ($reason){
+           return [
+               'id' => $reason->id,
+               'name' => $reason->name($this->lang_code),
+               'reason' => $reason->reason_type,
+               'created_at' => date('d/m/Y H:i',strtotime($reason->created_at))
+           ];
+        });
+
+        return $data;
+    }
+    ############################################################################
 }

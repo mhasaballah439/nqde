@@ -47,6 +47,23 @@ class Vendor extends Authenticatable implements JWTSubject
         else
             return 0;
     }
+
+    public function getActivePlanAttribute(){
+
+        if(isset($this->vendor_bouquets) && count($this->vendor_bouquets) > 0){
+            $plan = $this->vendor_bouquets()->whereDate('end_date','>',date('Y-m-d'))
+                ->where('is_payment',1)->orderBy('id','DESC')->first();
+            if (!$plan)
+                $plan = $this->vendor_bouquets()->whereDate('end_date','>',date('Y-m-d'))
+                    ->where('is_free_trail',1)->orderBy('id','DESC')->first();
+        } elseif(isset($this->vendor_free_bouquets) && count($this->vendor_free_bouquets) > 0) {
+            $plan = $this->vendor_free_bouquets()->whereDate('st_date', '<', date('Y-m-d'))
+                ->whereDate('end_date', '>', date('Y-m-d'))
+                ->orderBy('id', 'DESC')->first();
+        }
+
+        return isset($plan->plan) ? $plan->plan : [];
+    }
     public function municipal_file()
     {
         return $this->morphOne(VendorMedia::class, 'mediable');

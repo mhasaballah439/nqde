@@ -18,6 +18,8 @@ class CreateStockPurchaseOrderMaterialsTable extends Migration
             $table->integer('stock_purchase_order_id')->default(0);
             $table->integer('stock_material_id')->default(0);
             $table->integer('type')->default(0);
+            $table->decimal('qty',8,2)->default(0);
+            $table->decimal('price',8,2)->default(0);
             $table->timestamps();
         });
     }

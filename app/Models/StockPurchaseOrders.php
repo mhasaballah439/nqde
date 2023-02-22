@@ -37,4 +37,8 @@ class StockPurchaseOrders extends Model
                 return __('msg.canceled',[],$lang);
         }
     }
+
+    public function stock_materials(){
+        return $this->hasMany(StockPurchaseOrderMaterial::class,'stock_purchase_order_id');
+    }
 }

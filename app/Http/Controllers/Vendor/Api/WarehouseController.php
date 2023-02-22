@@ -3,6 +3,9 @@
 namespace App\Http\Controllers\Vendor\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ModifyQuantitie;
+use App\Models\ModifyQuantityStockMaterial;
+use App\Models\ProductionStockMaterial;
 use App\Models\Stock;
 use App\Models\StockCategory;
 use App\Models\StockInventoryTemplate;
@@ -18,17 +21,26 @@ use App\Models\SupplierTag;
 use App\Models\Tag;
 use App\Traits\ApiTrait;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Validator;
+use Spatie\SimpleExcel\SimpleExcelReader;
 
 class WarehouseController extends Controller
 {
     use ApiTrait;
 
     var $lang_code;
+    var $vendor_id;
 
     public function __construct()
     {
         $this->lang_code = \request()->get('lang') ? \request()->get('lang') : get_default_languages();
+
+        if (auth()->guard('vendor')->check())
+            $vendor_id = vendor()->id;
+        elseif (auth()->guard('vendor_employee')->check())
+            $vendor_id = vendor_employee()->vendor->id;
+
     }
 
     public function stockCategories(Request $request)
@@ -38,7 +50,7 @@ class WarehouseController extends Controller
         $add_by = $request->get('add_by');
         $created_at = $request->get('created_at');
 
-        $categories = StockCategory::where('vendor_id', vendor()->id)->Active();
+        $categories = StockCategory::where('vendor_id', $this->vendor_id);
         if ($name)
             $categories = $categories->where('name_ar', 'LIKE', '%' . $name . '%')
                 ->where('name_en', 'LIKE', '%' . $name . '%');
@@ -55,6 +67,7 @@ class WarehouseController extends Controller
                 'id' => $item->id,
                 'name' => $item->name($this->lang_code),
                 'number' => $item->number,
+                'created_at' => date('d/m/Y H:i', strtotime($item->created_at)),
                 'status' => $item->status,
             ];
         });
@@ -68,7 +81,7 @@ class WarehouseController extends Controller
         $add_by = $request->get('add_by');
         $created_at = $request->get('created_at');
 
-        $categories = StockCategory::where('vendor_id', vendor()->id)->onlyTrashed();
+        $categories = StockCategory::where('vendor_id', $this->vendor_id)->onlyTrashed();
         if ($name)
             $categories = $categories->where('name_ar', 'LIKE', '%' . $name . '%')
                 ->where('name_en', 'LIKE', '%' . $name . '%');
@@ -83,6 +96,7 @@ class WarehouseController extends Controller
                 'id' => $item->id,
                 'name' => $item->name($this->lang_code),
                 'number' => $item->number,
+                'created_at' => date('d/m/Y H:i', strtotime($item->created_at)),
                 'status' => $item->status,
             ];
         });
@@ -94,9 +108,9 @@ class WarehouseController extends Controller
     public function generateStokCategoryCode()
     {
         $last_item_id = 0;
-        $last_item = StockCategory::where('vendor_id', vendor()->id)->withTrashed()->orderBy('id', 'DESC')->first();
-        if($last_item){
-            $num = explode('-',$last_item->number);
+        $last_item = StockCategory::where('vendor_id', $this->vendor_id)->withTrashed()->orderBy('id', 'DESC')->first();
+        if ($last_item) {
+            $num = explode('-', $last_item->number);
             $last_item_id = $num[1];
         }
         $data = [
@@ -114,26 +128,27 @@ class WarehouseController extends Controller
         if ($validator->fails())
             return $this->errorResponse($validator->errors()->first(), 400);
 
-        $last_item_id = 0;
-        $last_item = StockCategory::where('vendor_id', vendor()->id)->withTrashed()->orderBy('id', 'DESC')->first();
+        if (!$request->category_id) {
+            $last_item_id = 0;
+            $last_item = StockCategory::where('vendor_id', $this->vendor_id)->withTrashed()->orderBy('id', 'DESC')->first();
 
-        if($last_item){
-            $num = explode('-',$last_item->number);
-            $last_item_id = $num[1];
+            if ($last_item) {
+                $num = explode('-', $last_item->number);
+                $last_item_id = $num[1];
+            }
         }
-        $cat = StockCategory::where('vendor_id', vendor()->id)
-            ->where('id', $request->category_id)->first();
+
+        $cat = StockCategory::where('id', $request->category_id)->where('vendor_id', $this->vendor_id)->first();
         if (!$cat)
             $cat = new StockCategory();
-        $cat->vendor_id = vendor()->id;
-        $cat->add_by = vendor()->name;
+        $cat->vendor_id = $this->vendor_id;
+        $cat->add_by = vendor()->first_name . ' ' . vendor()->family_name;
         if ($request->get('name_ar'))
             $cat->name_ar = $request->get('name_ar');
         if ($request->get('name_en'))
             $cat->name_en = $request->get('name_en');
         if (!$request->category_id)
             $cat->number = 'SC-' . ($last_item_id + 1);
-        $cat->status = $request->get('status');
         $cat->save();
         $data = [
             'id' => $cat->id,
@@ -150,8 +165,8 @@ class WarehouseController extends Controller
     public function deleteStokCategory(Request $request)
     {
 
-        $cat = StockCategory::where('vendor_id', vendor()->id)
-            ->where('id', $request->get('category_id'))->first();
+        $cat = StockCategory::where('vendor_id', $this->vendor_id)
+            ->where('id', $request->category_id)->first();
         if (!$cat)
             return $this->errorResponse('Category not found', 400);
 
@@ -169,7 +184,9 @@ class WarehouseController extends Controller
         $number = $request->get('number');
         $branches = $request->get('branches');
         $created_at = $request->get('created_at');
-        $store_house = StoreHouse::where('vendor_id', vendor()->id);
+        $store_house = StoreHouse::where('vendor_id', $this->vendor_id)->where('is_payment', 1)->orWhere(function ($q) {
+            $q->where('vendor_id', $this->vendor_id)->where('is_free', 1);
+        });
 
         if ($name)
             $store_house = $store_house->where('name_ar', 'LIKE', '%' . $name . '%')
@@ -203,7 +220,9 @@ class WarehouseController extends Controller
         $number = $request->get('number');
         $branches = $request->get('branches');
         $created_at = $request->get('created_at');
-        $store_house = StoreHouse::where('vendor_id', vendor()->id)->Active();
+        $store_house = StoreHouse::where('vendor_id', $this->vendor_id)->Active()->where('is_payment', 1)->orWhere(function ($q) {
+            $q->where('vendor_id', $this->vendor_id)->where('is_free', 1);
+        });
 
         if ($name)
             $store_house = $store_house->where('name_ar', 'LIKE', '%' . $name . '%')
@@ -237,7 +256,9 @@ class WarehouseController extends Controller
         $number = $request->get('number');
         $branches = $request->get('branches');
         $created_at = $request->get('created_at');
-        $store_house = StoreHouse::where('vendor_id', vendor()->id)->where('status', 0);
+        $store_house = StoreHouse::where('vendor_id', $this->vendor_id)->where('status', 0)->where('is_payment', 1)->orWhere(function ($q) {
+            $q->where('vendor_id', $this->vendor_id)->where('is_free', 1);
+        });
 
         if ($name)
             $store_house = $store_house->where('name_ar', 'LIKE', '%' . $name . '%')
@@ -268,9 +289,9 @@ class WarehouseController extends Controller
     public function generateStoreHouseCode()
     {
         $last_item_id = 0;
-        $last_item = StoreHouse::where('vendor_id', vendor()->id)->withTrashed()->orderBy('id', 'DESC')->first();
-        if($last_item){
-            $num = explode('-',$last_item->number);
+        $last_item = StoreHouse::where('vendor_id', $this->vendor_id)->withTrashed()->orderBy('id', 'DESC')->first();
+        if ($last_item) {
+            $num = explode('-', $last_item->number);
             $last_item_id = $num[1];
         }
         $data = [
@@ -289,26 +310,37 @@ class WarehouseController extends Controller
             return $this->errorResponse($validator->errors()->first(), 400);
 
         $last_item_id = 0;
-        $last_item = StoreHouse::where('vendor_id', vendor()->id)->withTrashed()->orderBy('id', 'DESC')->first();
-        if($last_item){
-            $num = explode('-',$last_item->number);
+        $last_item = StoreHouse::where('vendor_id', $this->vendor_id)->withTrashed()->orderBy('id', 'DESC')->first();
+        if ($last_item) {
+            $num = explode('-', $last_item->number);
             $last_item_id = $num[1];
         }
-        $store = StoreHouse::where('vendor_id', vendor()->id)
+        $store = StoreHouse::where('vendor_id', $this->vendor_id)
             ->where('id', $request->get('store_house_id'))->first();
-        if (!$store)
-            $store = new StoreHouse();
-        $store->vendor_id = vendor()->id;
-        if ($request->get('name_ar'))
-            $store->name_ar = $request->get('name_ar');
-        if ($request->get('name_en'))
-            $store->name_en = $request->get('name_en');
-        if (!$store)
-            $store->number = 'SH-' . ($last_item_id + 1);
-        if ($request->get('branches'))
-            $store->branches = $request->get('branches');
-        $store->status = $request->get('status');
-        $store->save();
+        if ($store) {
+            if ($request->name_ar)
+                $store->name_ar = $request->name_ar;
+            if ($request->name_en)
+                $store->name_en = $request->name_en;
+            if ($request->branches)
+                $store->branches = $request->branches;
+            $store->status = $request->get('status');
+            $store->save();
+        } else {
+            $directData = $this->myfatorah_payment($request, (float)vendor()->active_plan->warehouse_price);
+
+            if (isset($directData->Status) && $directData->Status == 'SUCCESS') {
+                $store = new StoreHouse();
+                $store->number = 'SH-' . ($last_item_id + 1);
+                $store->vendor_id = $this->vendor_id;
+                $store->name_ar = 'مستودع 1';
+                $store->name_en = 'Store warehouse 1';
+                $store->status = 1;
+                $store->is_payment = 1;
+                $store->payment = json_encode($directData);
+                $store->save();
+            }
+        }
 
         $data = [
             'id' => $store->id,
@@ -326,7 +358,7 @@ class WarehouseController extends Controller
     public function deleteStoreHouse(Request $request)
     {
 
-        $store = StoreHouse::where('vendor_id', vendor()->id)
+        $store = StoreHouse::where('vendor_id', $this->vendor_id)
             ->where('id', $request->get('store_house_id'))->first();
         if (!$store)
             return $this->errorResponse('Store house not found', 400);
@@ -339,20 +371,24 @@ class WarehouseController extends Controller
     }
 
     ########################### stoks ###################
-    public function tagsList()
+    public function tagsList(Request $request)
     {
-        $data = [
-            'customers' => $this->tage_type(1),
-            'branches' => $this->tage_type(2),
-            'stoks' => $this->tage_type(3),
-            'orders' => $this->tage_type(4),
-            'suppliers' => $this->tage_type(5),
-            'users' => $this->tage_type(6),
-            'products' => $this->tage_type(7),
-            'devices' => $this->tage_type(8),
-            'storehouses' => $this->tage_type(9),
-        ];
+        if ($request->get('type')) {
+            $data = $this->tage_type($request->get('type'));
 
+        } else {
+            $data = [
+                'customers' => $this->tage_type(1),
+                'branches' => $this->tage_type(2),
+                'stoks' => $this->tage_type(3),
+                'orders' => $this->tage_type(4),
+                'suppliers' => $this->tage_type(5),
+                'users' => $this->tage_type(6),
+                'products' => $this->tage_type(7),
+                'devices' => $this->tage_type(8),
+                'storehouses' => $this->tage_type(9),
+            ];
+        }
         $msg = __('msg.tag_get_success', [], $this->lang_code);
         return $this->dataResponse($msg, $data);
     }
@@ -360,9 +396,9 @@ class WarehouseController extends Controller
     public function generateTagsCode()
     {
         $last_item_id = 0;
-        $last_item = Tag::where('vendor_id', vendor()->id)->orderBy('id', 'DESC')->first();
-        if($last_item){
-            $num = explode('-',$last_item->number);
+        $last_item = Tag::where('vendor_id', $this->vendor_id)->orderBy('id', 'DESC')->first();
+        if ($last_item) {
+            $num = explode('-', $last_item->number);
             $last_item_id = $num[1];
         }
         $data = [
@@ -373,7 +409,7 @@ class WarehouseController extends Controller
 
     public function tage_type($type)
     {
-        return Tag::where('vendor_id', vendor()->id)->where('type', $type)->get();
+        return Tag::where('vendor_id', $this->vendor_id)->where('type', $type)->get();
     }
 
     public function createTag(Request $request)
@@ -387,19 +423,19 @@ class WarehouseController extends Controller
             return $this->errorResponse($validator->errors()->first(), 400);
 
         $last_item_id = 0;
-        $last_item = Tag::where('vendor_id', vendor()->id)->orderBy('id', 'DESC')->first();
-        if($last_item){
-            $num = explode('-',$last_item->number);
+        $last_item = Tag::where('vendor_id', $this->vendor_id)->orderBy('id', 'DESC')->first();
+        if ($last_item) {
+            $num = explode('-', $last_item->number);
             $last_item_id = $num[1];
         }
-        $tag = Tag::where('vendor_id', vendor()->id)
+        $tag = Tag::where('vendor_id', $this->vendor_id)
             ->where('number', $request->get('number'))
             ->where('type', $request->get('type'))->first();
         if ($tag)
             return $this->errorResponse(__('msg.tag_anumber_is_already_used', [], $this->lang_code), 400);
         $tag = new Tag();
 
-        $tag->vendor_id = vendor()->id;
+        $tag->vendor_id = $this->vendor_id;
         $tag->name_ar = $request->get('name_ar');
         $tag->name_en = $request->get('name_en');
         $tag->type = $request->get('type');
@@ -413,12 +449,12 @@ class WarehouseController extends Controller
 
     public function updateTag(Request $request)
     {
-        $tag = Tag::where('vendor_id', vendor()->id)
+        $tag = Tag::where('vendor_id', $this->vendor_id)
             ->where('id', $request->get('tag_id'))->first();
         if (!$tag)
             return $this->errorResponse(__('msg.tag_not_found', [], $this->lang_code), 400);
 
-        $tag->vendor_id = vendor()->id;
+        $tag->vendor_id = $this->vendor_id;
         if ($request->get('name_ar'))
             $tag->name_ar = $request->get('name_ar');
         if ($request->get('name_en'))
@@ -434,7 +470,7 @@ class WarehouseController extends Controller
 
     public function deleteTag(Request $request)
     {
-        $tag = Tag::where('vendor_id', vendor()->id)
+        $tag = Tag::where('vendor_id', $this->vendor_id)
             ->where('id', $request->get('tag_id'))->first();
         if (!$tag)
             return $this->errorResponse(__('msg.tag_not_found', [], $this->lang_code), 400);
@@ -457,7 +493,7 @@ class WarehouseController extends Controller
         $is_delete = $request->get('is_delete');
         $created_at = $request->get('created_at');
         $cost_calculation_method = $request->get('cost_calculation_method');
-        $stocks = Stock::where('vendor_id', vendor()->id);
+        $stocks = Stock::where('vendor_id', $this->vendor_id);
         if ($name)
             $stocks = $stocks->where('name', 'LIKE', '%' . $name . '%');
         if ($code)
@@ -515,7 +551,7 @@ class WarehouseController extends Controller
         $is_delete = $request->get('is_delete');
         $created_at = $request->get('created_at');
         $cost_calculation_method = $request->get('cost_calculation_method');
-        $stocks = Stock::where('vendor_id', vendor()->id);
+        $stocks = Stock::where('vendor_id', $this->vendor_id);
         if ($name)
             $stocks = $stocks->where('name', 'LIKE', '%' . $name . '%');
         if ($code)
@@ -561,9 +597,9 @@ class WarehouseController extends Controller
     public function generateStoksMateriealCode()
     {
         $last_item_id = 0;
-        $last_item = Stock::withTrashed()->where('vendor_id', vendor()->id)->orderBy('id', 'DESC')->first();
-        if($last_item){
-            $num = explode('-',$last_item->code);
+        $last_item = Stock::withTrashed()->where('vendor_id', $this->vendor_id)->orderBy('id', 'DESC')->first();
+        if ($last_item) {
+            $num = explode('-', $last_item->code);
             $last_item_id = $num[1];
         }
         $data = [
@@ -582,7 +618,7 @@ class WarehouseController extends Controller
         $supplier = $request->get('supplier_id');
         $created_at = $request->get('created_at');
         $cost_calculation_method = $request->get('cost_calculation_method');
-        $stocks = Stock::where('vendor_id', vendor()->id);
+        $stocks = Stock::where('vendor_id', $this->vendor_id);
         if ($name)
             $stocks = $stocks->where('name', 'LIKE', '%' . $name . '%');
         if ($code)
@@ -641,16 +677,16 @@ class WarehouseController extends Controller
             return $this->errorResponse($validator->errors()->first(), 400);
 
         $last_item_id = 0;
-        $last_item = Stock::withTrashed()->where('vendor_id', vendor()->id)->orderBy('id', 'DESC')->first();
-        if($last_item){
-            $num = explode('-',$last_item->code);
+        $last_item = Stock::withTrashed()->where('vendor_id', $this->vendor_id)->orderBy('id', 'DESC')->first();
+        if ($last_item) {
+            $num = explode('-', $last_item->code);
             $last_item_id = $num[1];
         }
 
-        $stock = Stock::where('vendor_id', vendor()->id)->where('id', $request->stock_id)->first();
+        $stock = Stock::where('vendor_id', $this->vendor_id)->where('id', $request->stock_id)->first();
         if (!$stock)
             $stock = new Stock();
-        $stock->vendor_id = vendor()->id;
+        $stock->vendor_id = $this->vendor_id;
         if ($request->get('store_house_id'))
             $stock->store_house_id = $request->get('store_house_id');
         if ($request->get('name'))
@@ -685,7 +721,7 @@ class WarehouseController extends Controller
 
     public function stockDetails(Request $request)
     {
-        $stock = Stock::where('vendor_id', vendor()->id)->where('id', $request->get('stock_id'))->first();
+        $stock = Stock::where('vendor_id', $this->vendor_id)->where('id', $request->get('stock_id'))->first();
         if (!$stock)
             return $this->errorResponse(__('msg.stock_not_found', [], $this->lang_code), 400);
         $data = [
@@ -716,7 +752,7 @@ class WarehouseController extends Controller
 
     public function deleteStock(Request $request)
     {
-        $stock = Stock::where('vendor_id', vendor()->id)->where('id', $request->get('stock_id'))->first();
+        $stock = Stock::where('vendor_id', $this->vendor_id)->where('id', $request->get('stock_id'))->first();
         if (!$stock)
             return $this->errorResponse(__('msg.stock_not_found', [], $this->lang_code), 400);
         $stock->delete();
@@ -766,7 +802,7 @@ class WarehouseController extends Controller
         $is_delete = $request->get('is_delete');
         $created_at = $request->get('created_at');
 
-        $suppliers = Supplier::where('vendor_id', vendor()->id);
+        $suppliers = Supplier::where('vendor_id', $this->vendor_id);
         if ($company_name)
             $suppliers = $suppliers->where('company_name', 'LIKE', '%' . $company_name . '%');
         if ($name)
@@ -802,7 +838,7 @@ class WarehouseController extends Controller
         $email = $request->get('email');
         $created_at = $request->get('created_at');
 
-        $suppliers = Supplier::where('vendor_id', vendor()->id)->onlyTrashed();
+        $suppliers = Supplier::where('vendor_id', $this->vendor_id)->onlyTrashed();
         if ($company_name)
             $suppliers = $suppliers->where('company_name', 'LIKE', '%' . $company_name . '%');
         if ($name)
@@ -827,13 +863,13 @@ class WarehouseController extends Controller
     public function generateSupplierCode()
     {
         $last_item_id = 0;
-        $last_item = Supplier::withTrashed()->where('vendor_id', vendor()->id)->orderBy('id', 'DESC')->first();
-        if($last_item){
-            $num = explode('-',$last_item->code);
+        $last_item = Supplier::withTrashed()->where('vendor_id', $this->vendor_id)->orderBy('id', 'DESC')->first();
+        if ($last_item) {
+            $num = explode('-', $last_item->code);
             $last_item_id = $num[1];
         }
         $data = [
-            'operation_number' => 'SP-' . str_pad($last_item_id+1, 5, "0", STR_PAD_LEFT)
+            'operation_number' => 'SP-' . str_pad($last_item_id + 1, 5, "0", STR_PAD_LEFT)
         ];
         return $this->dataResponse('generated successfully', $data);
     }
@@ -851,14 +887,14 @@ class WarehouseController extends Controller
             return $this->errorResponse($validator->errors()->first(), 400);
 
         $last_item_id = 0;
-        $last_item = Supplier::withTrashed()->where('vendor_id', vendor()->id)->orderBy('id', 'DESC')->first();
-        if($last_item){
-            $num = explode('-',$last_item->code);
+        $last_item = Supplier::withTrashed()->where('vendor_id', $this->vendor_id)->orderBy('id', 'DESC')->first();
+        if ($last_item) {
+            $num = explode('-', $last_item->code);
             $last_item_id = $num[1];
         }
 
         $supplier = new Supplier();
-        $supplier->vendor_id = vendor()->id;
+        $supplier->vendor_id = $this->vendor_id;
         $supplier->company_name = $request->get('company_name');
         $supplier->name = $request->get('name');
         $supplier->mobile = $request->get('mobile');
@@ -873,7 +909,7 @@ class WarehouseController extends Controller
 
     public function updateSupplier(Request $request)
     {
-        $supplier = Supplier::where('vendor_id', vendor()->id)->where('id', $request->get('supplier_id'))->first();
+        $supplier = Supplier::where('vendor_id', $this->vendor_id)->where('id', $request->get('supplier_id'))->first();
         if (!$supplier)
             return $this->errorResponse(__('msg.supplier_not_found', [], $this->lang_code), 400);
         if ($request->get('company_name'))
@@ -893,7 +929,7 @@ class WarehouseController extends Controller
 
     public function supplierDetails(Request $request)
     {
-        $supplier = Supplier::where('vendor_id', vendor()->id)->where('id', $request->get('supplier_id'))->first();
+        $supplier = Supplier::where('vendor_id', $this->vendor_id)->where('id', $request->get('supplier_id'))->first();
         if (!$supplier)
             return $this->errorResponse(__('msg.supplier_not_found', [], $this->lang_code), 400);
 
@@ -916,7 +952,7 @@ class WarehouseController extends Controller
 
     public function deleteSupplier(Request $request)
     {
-        $supplier = Supplier::where('vendor_id', vendor()->id)->where('id', $request->get('supplier_id'))->first();
+        $supplier = Supplier::where('vendor_id', $this->vendor_id)->where('id', $request->get('supplier_id'))->first();
         if (!$supplier)
             return $this->errorResponse(__('msg.supplier_not_found', [], $this->lang_code), 400);
 
@@ -994,7 +1030,7 @@ class WarehouseController extends Controller
         $name = $request->get('name');
         $secondary_name = $request->get('secondary_name');
         $code = $request->get('code');
-        $inventory = StockInventoryTemplate::where('vendor_id', vendor()->id);
+        $inventory = StockInventoryTemplate::where('vendor_id', $this->vendor_id);
         if ($name)
             $inventory = $inventory->where('name', 'LIKE', '%' . $name . '%');
         if ($secondary_name)
@@ -1012,9 +1048,9 @@ class WarehouseController extends Controller
     public function generateInvintoryTemplateCode()
     {
         $last_item_id = 0;
-        $last_item = StockInventoryTemplate::where('vendor_id', vendor()->id)->orderBy('id', 'DESC')->first();
-        if($last_item){
-            $num = explode('-',$last_item->code);
+        $last_item = StockInventoryTemplate::where('vendor_id', $this->vendor_id)->orderBy('id', 'DESC')->first();
+        if ($last_item) {
+            $num = explode('-', $last_item->code);
             $last_item_id = $num[1];
         }
         $data = [
@@ -1033,13 +1069,13 @@ class WarehouseController extends Controller
             return $this->errorResponse($validator->errors()->first(), 400);
 
         $last_item_id = 0;
-        $last_item = StockInventoryTemplate::where('vendor_id', vendor()->id)->orderBy('id', 'DESC')->first();
-        if($last_item){
-            $num = explode('-',$last_item->code);
+        $last_item = StockInventoryTemplate::where('vendor_id', $this->vendor_id)->orderBy('id', 'DESC')->first();
+        if ($last_item) {
+            $num = explode('-', $last_item->code);
             $last_item_id = $num[1];
         }
         $inventory = new StockInventoryTemplate();
-        $inventory->vendor_id = vendor()->id;
+        $inventory->vendor_id = $this->vendor_id;
         $inventory->name = $request->get('name');
         $inventory->secondary_name = $request->get('secondary_name');
         $inventory->code = 'SIT-' . str_pad($last_item_id + 1, 5, "0", STR_PAD_LEFT);
@@ -1051,7 +1087,7 @@ class WarehouseController extends Controller
 
     public function editStockInventoryTemplate(Request $request)
     {
-        $inventory = StockInventoryTemplate::where('vendor_id', vendor()->id)->where('id', $request->get('id'))->first();
+        $inventory = StockInventoryTemplate::where('vendor_id', $this->vendor_id)->where('id', $request->get('id'))->first();
         if (!$inventory)
             return $this->errorResponse(__('msg.inventory_template_not_found', [], $this->lang_code), 400);
         if ($request->get('name'))
@@ -1066,7 +1102,7 @@ class WarehouseController extends Controller
 
     public function deleteStockInventoryTemplate(Request $request)
     {
-        $inventory = StockInventoryTemplate::where('vendor_id', vendor()->id)->where('id', $request->get('id'))->first();
+        $inventory = StockInventoryTemplate::where('vendor_id', $this->vendor_id)->where('id', $request->get('id'))->first();
         if (!$inventory)
             return $this->errorResponse(__('msg.inventory_template_not_found', [], $this->lang_code), 400);
 
@@ -1081,9 +1117,9 @@ class WarehouseController extends Controller
     public function generateStokPurchaseOrdersCode()
     {
         $last_item_id = 0;
-        $last_item = StockPurchaseOrders::where('vendor_id', vendor()->id)->orderBy('id', 'DESC')->first();
-        if($last_item){
-            $num = explode('-',$last_item->code);
+        $last_item = StockPurchaseOrders::where('vendor_id', $this->vendor_id)->orderBy('id', 'DESC')->first();
+        if ($last_item) {
+            $num = explode('-', $last_item->code);
             $last_item_id = $num[1];
         }
         $data = [
@@ -1103,15 +1139,15 @@ class WarehouseController extends Controller
         $created_at = $request->get('created_at');
         $delivery_date = $request->get('delivery_date');
         if ($request->get('type') == 0) // all status
-            $purchase_orders = StockPurchaseOrders::where('vendor_id', vendor()->id);
+            $purchase_orders = StockPurchaseOrders::where('vendor_id', $this->vendor_id);
         elseif ($request->get('type') == 1) //draft
-            $purchase_orders = StockPurchaseOrders::where('vendor_id', vendor()->id)->where('status_id', 0);
+            $purchase_orders = StockPurchaseOrders::where('vendor_id', $this->vendor_id)->where('status_id', 0);
         elseif ($request->get('type') == 2) // sent
-            $purchase_orders = StockPurchaseOrders::where('vendor_id', vendor()->id)->where('status_id', 1);
+            $purchase_orders = StockPurchaseOrders::where('vendor_id', $this->vendor_id)->where('status_id', 1);
         elseif ($request->get('type') == 3) // canceled
-            $purchase_orders = StockPurchaseOrders::where('vendor_id', vendor()->id)->where('status_id', 3);
+            $purchase_orders = StockPurchaseOrders::where('vendor_id', $this->vendor_id)->where('status_id', 3);
         else
-            $purchase_orders = StockPurchaseOrders::where('vendor_id', vendor()->id);
+            $purchase_orders = StockPurchaseOrders::where('vendor_id', $this->vendor_id);
 
         if ($code)
             $purchase_orders = $purchase_orders->where('code', 'LIKE', '%' . $code . '%');
@@ -1174,15 +1210,15 @@ class WarehouseController extends Controller
         $created_at = $request->get('created_at');
         $delivery_date = $request->get('delivery_date');
         if ($request->get('type') == 0) // all status
-            $purchase_orders = StockPurchaseOrders::where('vendor_id', vendor()->id);
+            $purchase_orders = StockPurchaseOrders::where('vendor_id', $this->vendor_id);
         elseif ($request->get('type') == 1) //draft
-            $purchase_orders = StockPurchaseOrders::where('vendor_id', vendor()->id)->where('status_id', 0);
+            $purchase_orders = StockPurchaseOrders::where('vendor_id', $this->vendor_id)->where('status_id', 0);
         elseif ($request->get('type') == 2) // sent
-            $purchase_orders = StockPurchaseOrders::where('vendor_id', vendor()->id)->where('status_id', 1);
+            $purchase_orders = StockPurchaseOrders::where('vendor_id', $this->vendor_id)->where('status_id', 1);
         elseif ($request->get('type') == 3) // canceled
-            $purchase_orders = StockPurchaseOrders::where('vendor_id', vendor()->id)->where('status_id', 3);
+            $purchase_orders = StockPurchaseOrders::where('vendor_id', $this->vendor_id)->where('status_id', 3);
         else
-            $purchase_orders = StockPurchaseOrders::where('vendor_id', vendor()->id);
+            $purchase_orders = StockPurchaseOrders::where('vendor_id', $this->vendor_id);
 
         if ($code)
             $purchase_orders = $purchase_orders->where('code', 'LIKE', '%' . $code . '%');
@@ -1237,17 +1273,17 @@ class WarehouseController extends Controller
     public function createStockPurchaseOrders(Request $request)
     {
         $last_item_id = 0;
-        $last_item = StockPurchaseOrders::where('vendor_id', vendor()->id)->orderBy('id', 'DESC')->first();
-        if($last_item){
-            $num = explode('-',$last_item->code);
+        $last_item = StockPurchaseOrders::where('vendor_id', $this->vendor_id)->orderBy('id', 'DESC')->first();
+        if ($last_item) {
+            $num = explode('-', $last_item->code);
             $last_item_id = $num[1];
         }
         $sender_name = '';
         $sender_id = 0;
         if (auth()->guard('vendor')->check()) {
-            $sender_name = vendor()->name;
-            $sender_id = vendor()->id;
-        }elseif (auth()->guard('vendor_employee')->check()){
+            $sender_name = vendor()->first_name . ' ' . vendor()->family_name;
+            $sender_id = $this->vendor_id;
+        } elseif (auth()->guard('vendor_employee')->check()) {
             $sender_name = vendor_employee()->name;
             $sender_id = vendor_employee()->vendor->id;
         }
@@ -1272,9 +1308,9 @@ class WarehouseController extends Controller
     {
         $vendor_id = 0;
         if (auth()->guard('vendor')->check())
-            $vendor_id = vendor()->id;
-            elseif (auth()->guard('vendor_employee')->check())
-        $vendor_id = vendor_employee()->vendor->id;
+            $vendor_id = $this->vendor_id;
+        elseif (auth()->guard('vendor_employee')->check())
+            $vendor_id = vendor_employee()->vendor->id;
 
         $purchase_order = StockPurchaseOrders::where('vendor_id', $vendor_id)->where('id', $request->get('purchase_order_id'))->first();
         if (!$purchase_order)
@@ -1302,11 +1338,11 @@ class WarehouseController extends Controller
     {
         $vendor_id = 0;
         if (auth()->guard('vendor')->check())
-            $vendor_id = vendor()->id;
+            $vendor_id = $this->vendor_id;
         elseif (auth()->guard('vendor_employee')->check())
             $vendor_id = vendor_employee()->vendor->id;
 
-        $purchase = StockPurchaseOrders::where('vendor_id',$vendor_id)->where('id', $request->get('purchase_order_id'))->first();
+        $purchase = StockPurchaseOrders::where('vendor_id', $vendor_id)->where('id', $request->get('purchase_order_id'))->first();
         if (!$purchase)
             return $this->errorResponse(__('msg.stock_purchase_order_not_found', [], $this->lang_code), 400);
 
@@ -1325,7 +1361,17 @@ class WarehouseController extends Controller
             'delivery_date' => $purchase->delivery_date ? date('d/m/Y H:i', strtotime($purchase->delivery_date)) : '',
             'invoice_date' => isset($purchase->stock_purchase) && $purchase->stock_purchase->invoice_date ? date('d/m/Y H:i', strtotime($purchase->stock_purchase->invoice_date)) : '',
             'invoice_number' => isset($purchase->stock_purchase) && $purchase->stock_purchase->invoice_number ? $purchase->stock_purchase->invoice_number : '',
-            'stock_purchase_order_materials' => []
+            'stock_purchase_order_materials' => isset($purchase->stock_materials) && count($purchase->stock_materials) > 0 ? $purchase->stock_materials->map(function ($material) {
+                return [
+                    'id' => $material->id,
+                    'qty' => (float)$material->qty,
+                    'price' => (float)$material->price,
+                    'stock_qty' => 0,
+                    'stock_name' => $material->stock->name,
+                    'stock_code' => $material->stock->code,
+                    'stock_price' => $material->stock->amount,
+                ];
+            }) : []
         ];
 
         $msg = __('msg.stock_purchase_orders_get_success', [], $this->lang_code);
@@ -1336,14 +1382,14 @@ class WarehouseController extends Controller
     {
         $vendor_id = 0;
         if (auth()->guard('vendor')->check())
-            $vendor_id = vendor()->id;
+            $vendor_id = $this->vendor_id;
         elseif (auth()->guard('vendor_employee')->check())
             $vendor_id = vendor_employee()->vendor->id;
 
         $last_item_id = 0;
         $last_item = StockPurchase::where('vendor_id', $vendor_id)->orderBy('id', 'DESC')->first();
-        if($last_item){
-            $num = explode('-',$last_item->code);
+        if ($last_item) {
+            $num = explode('-', $last_item->code);
             $last_item_id = $num[1];
         }
         $data = [
@@ -1356,7 +1402,7 @@ class WarehouseController extends Controller
     {
         $vendor_id = 0;
         if (auth()->guard('vendor')->check())
-            $vendor_id = vendor()->id;
+            $vendor_id = $this->vendor_id;
         elseif (auth()->guard('vendor_employee')->check())
             $vendor_id = vendor_employee()->vendor->id;
 
@@ -1376,7 +1422,7 @@ class WarehouseController extends Controller
     {
         $vendor_id = 0;
         if (auth()->guard('vendor')->check())
-            $vendor_id = vendor()->id;
+            $vendor_id = $this->vendor_id;
         elseif (auth()->guard('vendor_employee')->check())
             $vendor_id = vendor_employee()->vendor->id;
         $purchase = StockPurchaseOrders::where('vendor_id', $vendor_id)
@@ -1395,7 +1441,7 @@ class WarehouseController extends Controller
     {
         $vendor_id = 0;
         if (auth()->guard('vendor')->check())
-            $vendor_id = vendor()->id;
+            $vendor_id = $this->vendor_id;
         elseif (auth()->guard('vendor_employee')->check())
             $vendor_id = vendor_employee()->vendor->id;
         $purchase = StockPurchaseOrders::where('vendor_id', $vendor_id)
@@ -1406,15 +1452,15 @@ class WarehouseController extends Controller
         $purchase->save();
 
         $last_item_id = 0;
-        $last_item = StockPurchase::where('vendor_id', vendor()->id)->orderBy('id', 'DESC')->first();
-        if($last_item){
-            $num = explode('-',$last_item->code);
+        $last_item = StockPurchase::where('vendor_id', $this->vendor_id)->orderBy('id', 'DESC')->first();
+        if ($last_item) {
+            $num = explode('-', $last_item->code);
             $last_item_id = $num[1];
         }
         $stock_purch = new StockPurchase();
         $stock_purch->vendor_id = $vendor_id;
-        $stock_purch->created_by_name = vendor()->name;
-        $stock_purch->sender_by_name = vendor()->name;
+        $stock_purch->created_by_name = vendor()->first_name . ' ' . vendor()->family_name;
+        $stock_purch->sender_by_name = vendor()->first_name . ' ' . vendor()->family_name;
         $stock_purch->code = 'PUR-' . str_pad($last_item_id + 1, 3, "0", STR_PAD_LEFT);
         $stock_purch->supplier_id = $purchase->supplier_id;
         $stock_purch->branch_id = $purchase->branch_id;
@@ -1426,21 +1472,24 @@ class WarehouseController extends Controller
         return $this->successResponse($msg, 200);
     }
 
-    public function addStockPurchaseOrderStockMaterial(Request $request){
+    public function addStockPurchaseOrderStockMaterial(Request $request)
+    {
         $vendor_id = 0;
         if (auth()->guard('vendor')->check())
-            $vendor_id = vendor()->id;
+            $vendor_id = $this->vendor_id;
         elseif (auth()->guard('vendor_employee')->check())
             $vendor_id = vendor_employee()->vendor->id;
-        if ($request->type = 1 && $request->stock_materials){
-            $purchase = StockPurchaseOrders::where('vendor_id', $vendor_id)
-                ->where('id', $request->get('purchase_order_id'))->first();
-            if (!$purchase)
-                return $this->errorResponse(__('msg.stock_purchase_order_not_found', [], $this->lang_code), 400);
+
+        $purchase = StockPurchaseOrders::where('vendor_id', $vendor_id)
+            ->where('id', $request->purchase_order_id)->first();
+        if (!$purchase)
+            return $this->errorResponse(__('msg.stock_purchase_order_not_found', [], $this->lang_code), 400);
+
+        if ($request->type = 1 && $request->stock_materials) {
             $stock_materials = json_decode($request->stock_materials);
-            foreach ($stock_materials as $material){
-                $stock_pur_or_material = StockPurchaseOrderMaterial::where('stock_purchase_order_id',$purchase->id)
-                    ->where('stock_material_id',$material)->first();
+            foreach ($stock_materials as $material) {
+                $stock_pur_or_material = StockPurchaseOrderMaterial::where('stock_purchase_order_id', $purchase->id)
+                    ->where('stock_material_id', $material)->first();
                 if (!$stock_pur_or_material)
                     $stock_pur_or_material = new StockPurchaseOrderMaterial();
                 $stock_pur_or_material->stock_purchase_order_id = $purchase->id;
@@ -1448,15 +1497,11 @@ class WarehouseController extends Controller
                 $stock_pur_or_material->type = 1;
                 $stock_pur_or_material->save();
             }
-        }elseif ($request->type = 2 && $request->stock_materials_tags){
-            $purchase = StockPurchaseOrders::where('vendor_id', $vendor_id)
-                ->where('id', $request->get('purchase_order_id'))->first();
-            if (!$purchase)
-                return $this->errorResponse(__('msg.stock_purchase_order_not_found', [], $this->lang_code), 400);
+        } elseif ($request->type = 2 && $request->stock_materials_tags) {
             $stock_materials_tags = json_decode($request->stock_materials_tags);
-            foreach ($stock_materials_tags as $tag){
-                $stock_material = Stock::where('vendor_id',$vendor_id)->whereHas('tags',function ($q)use($tag){
-                    $q->where('name_ar','LIKE','%'.$tag.'%')->orWhere('name_en','LIKE','%'.$tag.'%');
+            foreach ($stock_materials_tags as $tag) {
+                $stock_material = Stock::where('vendor_id', $vendor_id)->whereHas('tags', function ($q) use ($tag) {
+                    $q->where('name_ar', 'LIKE', '%' . $tag . '%')->orWhere('name_en', 'LIKE', '%' . $tag . '%');
                 })->first();
                 if ($stock_material) {
                     $stock_pur_or_material = StockPurchaseOrderMaterial::where('stock_purchase_order_id', $purchase->id)
@@ -1469,15 +1514,11 @@ class WarehouseController extends Controller
                     $stock_pur_or_material->save();
                 }
             }
-        }elseif ($request->type = 3 && $request->stock_materials_suppliers){
-            $purchase = StockPurchaseOrders::where('vendor_id', $vendor_id)
-                ->where('id', $request->get('purchase_order_id'))->first();
-            if (!$purchase)
-                return $this->errorResponse(__('msg.stock_purchase_order_not_found', [], $this->lang_code), 400);
+        } elseif ($request->type = 3 && $request->stock_materials_suppliers) {
             $stock_materials_suppliers = json_decode($request->stock_materials_suppliers);
-            foreach ($stock_materials_suppliers as $supplier){
-                $stock_material = Stock::where('vendor_id',$vendor_id)->whereHas('tags',function ($q)use($supplier){
-                    $q->where('name_ar','LIKE','%'.$supplier.'%')->orWhere('name_en','LIKE','%'.$supplier.'%');
+            foreach ($stock_materials_suppliers as $supplier) {
+                $stock_material = Stock::where('vendor_id', $vendor_id)->whereHas('tags', function ($q) use ($supplier) {
+                    $q->where('name_ar', 'LIKE', '%' . $supplier . '%')->orWhere('name_en', 'LIKE', '%' . $supplier . '%');
                 })->first();
                 if ($stock_material) {
                     $stock_pur_or_material = StockPurchaseOrderMaterial::where('stock_purchase_order_id', $purchase->id)
@@ -1490,22 +1531,467 @@ class WarehouseController extends Controller
                     $stock_pur_or_material->save();
                 }
             }
+        } elseif ($request->type = 4) {
+            if (!$request->hasFile('csv_file'))
+                return $this->errorResponse(__('msg.please_add_csv_file', [], $this->lang_code), 400);
+
+
+            $file = $request->csv_file;
+            $type = $file->getClientOriginalExtension();
+            $myfile = $file->getClientOriginalName();
+            $destinationPath = 'uploads/csv_files';
+            $file_data = $file->move(public_path($destinationPath), $myfile);
+
+            if ($type <> 'csv')
+                return $this->errorResponse(__('msg.only_csv_is_allowed', [], $this->lang_code), 400);
+            SimpleExcelReader::create($file_data->getPathName())->getRows()
+                ->each(function (array $rowProperties) use ($purchase) {
+                    $arr_val = array_values($rowProperties)[0];
+                    if (isset($arr_val)) {
+                        $sku_item = explode(';', $arr_val);
+                        $stock_code = $sku_item[0];
+                        $stock = Stock::where('code', $stock_code)->first();
+                        if ($stock) {
+                            $stock_pur_or_material = StockPurchaseOrderMaterial::where('stock_purchase_order_id', $purchase->id)
+                                ->where('stock_material_id', $stock->id)->first();
+                            if (!$stock_pur_or_material)
+                                $stock_pur_or_material = new StockPurchaseOrderMaterial();
+                            $stock_pur_or_material->stock_purchase_order_id = $purchase->id;
+                            $stock_pur_or_material->stock_material_id = $stock->id;
+                            $stock_pur_or_material->type = 4;
+                            $stock_pur_or_material->qty = isset($sku_item[2]) && $sku_item[2] > 0 ? $sku_item[2] : 1;
+                            $stock_pur_or_material->price = $stock_pur_or_material->qty * $stock->amount;
+                            $stock_pur_or_material->save();
+                        }
+                    }
+                });
+            File::delete($file_data->getPathName());
         }
+
+        $msg = __('msg.stocks_created_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function updatePurchaseOrderStockMaterialQty(Request $request)
+    {
+        if (!$request->materials)
+            return $this->errorResponse(__('msg.materials_field_required', [], $this->lang_code), 400);
+        $materials = json_decode($request->materials);
+        if (count($materials) <= 0)
+            return $this->errorResponse(__('msg.stock_not_found', [], $this->lang_code), 400);
+        foreach ($materials as $material) {
+            $item = StockPurchaseOrderMaterial::find($material->id);
+            if ($item) {
+                $item->qty = $material->qty;
+                $item->price = $item->qty * $item->stock->amount;
+                $item->save();
+            }
+        }
+
+        $msg = __('msg.stocks_updated_success', [], $this->lang_code);
+        return $this->successResponse($msg, 200);
     }
 
     ###################### stock production ##################33
     public function stockProductions(Request $request)
     {
-        $stock_production = StockProduction::where('vendor_id', vendor()->id);
-        $code = $request->get('code');
-        $work_date = $request->get('work_date');
-        $sender_date = $request->get('sender_date');
-        $status_id = $request->get('status_id');
-        $tag = $request->get('tag');
-        $store_house_id = $request->get('store_house_id');
-        $created_at = $request->get('created_at');
-        $sender = $request->get('sender');
-        $creator = $request->get('creator');
-//        if ()
+
+        $code = $request->code;
+        $work_date = $request->work_date;
+        $sender_date = $request->sender_date;
+        $status_id = $request->status_id;
+        $tag = $request->tag;
+        $store_house_id = $request->store_house_id;
+        $created_at = $request->created_at;
+        $sender = $request->sender;
+        $creator = $request->creator;
+        $stock_production = StockProduction::where('vendor_id', $this->vendor_id);
+        if ($code)
+            $stock_production = $stock_production->where('code', 'LIKE', '%' . $code . '%');
+        if ($work_date)
+            $stock_production = $stock_production->whereDate('work_date', $work_date);
+        if ($sender_date)
+            $stock_production = $stock_production->whereDate('sender_date', $sender_date);
+        if ($created_at)
+            $stock_production = $stock_production->whereDate('created_at', $created_at);
+        if ($status_id)
+            $stock_production = $stock_production->where('status_id', $status_id);
+        if ($store_house_id)
+            $stock_production = $stock_production->where('store_house_id', $store_house_id);
+        if ($tag)
+            $stock_production = $stock_production->whereHas('branch', function ($q) use ($tag) {
+                $q->whereHas('tags', function ($t) use ($tag) {
+                    $t->where('name_ar', 'LIKE', '%' . $tag . '%');
+                });
+            });
+        if ($sender)
+            $stock_production = $stock_production->where('sender', 'LIKE', '%' . $sender . '%');
+        if ($creator)
+            $stock_production = $stock_production->where('creator', 'LIKE', '%' . $creator . '%');
+
+        $stock_production = $stock_production->orderBy('id', 'DESC')->get();
+
+        $data = $stock_production->map(function ($production) {
+            return [
+                'branch' => isset($production->branch) ? $production->branch->name($this->lang_code) : '',
+                'work_date' => date('d/m/Y H:i', strtotime($production->work_date)),
+                'sender_date' => date('d/m/Y H:i', strtotime($production->sender_date)),
+                'created_at' => date('d/m/Y H:i', strtotime($production->created_at)),
+                'sender' => $production->sender,
+                'creator' => $production->creator,
+                'amount' => $production->amount,
+                'id' => $production->id,
+            ];
+        });
+        $msg = __('msg.stock_production_get_success', [], $this->lang_code);
+        return $this->dataResponse($msg, $data, 200);
     }
+
+    public function createStockProduction(Request $request)
+    {
+        $validator = Validator::make($request->all(), [
+            'branch_id' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $production = new StockProduction();
+        $production->vendor_id = $this->vendor_id;
+        $production->creator = vendor()->first_name . ' ' . vendor()->family_name;
+        $production->branch_id = $request->branch_id;
+        $production->status_id = 2;
+        $production->save();
+
+        $msg = __('msg.stock_production_created_success', [], $this->lang_code);
+        return $this->successResponse($msg, 200);
+    }
+
+    public function updateStockProduction(Request $request)
+    {
+
+        $production = StockProduction::where('vendor_id', $this->vendor_id)->where('id', $request->production_id)->first();
+        if (!$production)
+            return $this->errorResponse(__('msg.stock_production_not_found', [], $this->lang_code), 400);
+        if ($request->branch_id)
+            $production->branch_id = $request->branch_id;
+        if ($request->amount)
+            $production->amount = $request->amount;
+        $production->save();
+
+        $msg = __('msg.stock_production_updated_success');
+        return $this->successResponse($msg, 200);
+    }
+
+    public function stockProductionUpdateStatus(Request $request)
+    {
+        $production = StockProduction::where('vendor_id', $this->vendor_id)->where('id', $request->production_id)->first();
+        if (!$production)
+            return $this->errorResponse(__('msg.stock_production_not_found', [], $this->lang_code), 400);
+        if ($request->status_id == 3) {
+            $production->sender_date = date('Y-m-d H:i');
+            $production->sender = vendor()->first_name . ' ' . vendor()->family_name;
+            $production->status_id = 3;
+            $production->save();
+        } elseif ($request->status_id == 4) {
+            $production->status_id = 4;
+            $production->save();
+        }
+
+        $msg = __('msg.status_updated_success', [], $this->lang_code);
+        return $this->successResponse($msg, 200);
+    }
+
+    public function stockProductionDetails(Request $request)
+    {
+        $production = StockProduction::where('vendor_id', $this->vendor_id)->where('id', $request->production_id)->first();
+        if (!$production)
+            return $this->errorResponse(__('msg.stock_production_not_found', [], $this->lang_code), 400);
+        $data = [
+            'branch' => isset($production->branch) ? $production->branch->name($this->lang_code) : '',
+            'work_date' => date('d/m/Y H:i', strtotime($production->work_date)),
+            'sender_date' => date('d/m/Y H:i', strtotime($production->sender_date)),
+            'created_at' => date('d/m/Y H:i', strtotime($production->created_at)),
+            'sender' => $production->sender,
+            'creator' => $production->creator,
+            'amount' => $production->amount,
+            'status_id' => $production->status_id,
+            'production_material' => isset($production->production_material) && count($production->production_material) > 0 ? $production->production_material->map(function ($mat) {
+                return [
+                    'id' => $mat->id,
+                    'material_id' => $mat->id,
+                    'stock_name' => isset($mat->stock) ? $mat->stock->name : '',
+                    'stock_code' => isset($mat->stock) ? $mat->stock->code : '',
+                    'storage_unit' => isset($mat->stock) ? $mat->stock->storage_unit : '',
+                    'qty' => $mat->qty,
+
+                ];
+            }) : []
+        ];
+        $msg = __('msg.stock_production_get_success', [], $this->lang_code);
+        return $this->dataResponse($msg, $data, 200);
+    }
+
+    public function productionAddStockMaterial(Request $request)
+    {
+        if ($request->type == 1) {
+            $validator = Validator::make($request->all(), [
+                'stock_id' => 'required',
+                'production_id' => 'required',
+                'qty' => 'required',
+            ]);
+
+            if ($validator->fails())
+                return $this->errorResponse($validator->errors()->first(), 400);
+
+            $prod_s_m = new ProductionStockMaterial();
+            $prod_s_m->production_id = $request->production_id;
+            $prod_s_m->stock_id = $request->stock_id;
+            $prod_s_m->qty = $request->qty;
+            $prod_s_m->save();
+        } elseif ($request->type == 2) {
+            if (!$request->hasFile('csv_file'))
+                return $this->errorResponse(__('msg.please_add_csv_file', [], $this->lang_code), 400);
+            $file = $request->csv_file;
+            $type = $file->getClientOriginalExtension();
+            $myfile = $file->getClientOriginalName();
+            $destinationPath = 'uploads/csv_files';
+            $file_data = $file->move(public_path($destinationPath), $myfile);
+
+            if ($type <> 'csv')
+                return $this->errorResponse(__('msg.only_csv_is_allowed', [], $this->lang_code), 400);
+            SimpleExcelReader::create($file_data->getPathName())->getRows()
+                ->each(function (array $rowProperties) use ($request) {
+                    $arr_val = array_values($rowProperties)[0];
+                    if (isset($arr_val)) {
+                        $sku_item = explode(';', $arr_val);
+                        $stock_code = $sku_item[0];
+                        $stock = Stock::where('code', $stock_code)->first();
+                        if ($stock) {
+                            $prod_s_m = ProductionStockMaterial::where('production_id', $request->production_id)
+                                ->where('stock_id', $stock->id)->first();
+                            if (!$prod_s_m)
+                                $prod_s_m = new ProductionStockMaterial();
+                            $prod_s_m->production_id = $request->production_id;
+                            $prod_s_m->stock_id = $stock->id;
+                            $prod_s_m->qty = isset($sku_item[2]) && $sku_item[2] > 0 ? $sku_item[2] : 1;
+                            $prod_s_m->save();
+                        }
+                    }
+                });
+            File::delete($file_data->getPathName());
+        }
+
+        $msg = __('msg.stocks_created_success', [], $this->lang_code);
+        return $this->successResponse($msg, 200);
+    }
+
+    ###################### modify qty ########################33
+    public function modifyQuantities(Request $request)
+    {
+        $reason = $request->reason;
+        $created_at = $request->created_at;
+        $work_date = $request->work_date;
+        $name = $request->name;
+        $status = $request->status;
+        $code = $request->code;
+        $branch_tag = $request->branch_tag;
+        $created_by = $request->created_by;
+        $send_by = $request->send_by;
+
+        $modify_quantities = ModifyQuantitie::where('vendor_id', $this->vendor_id);
+        if ($reason)
+            $modify_quantities = $modify_quantities->where('reason_id', $reason);
+        if ($status)
+            $modify_quantities = $modify_quantities->where('status_id', $status);
+        if ($created_at)
+            $modify_quantities = $modify_quantities->whereDate('status_id', $created_at);
+        if ($work_date)
+            $modify_quantities = $modify_quantities->whereDate('status_id', $work_date);
+        if ($created_by)
+            $modify_quantities = $modify_quantities->where('created_by', 'LIKE', '%' . $created_by . '%');
+        if ($send_by)
+            $modify_quantities = $modify_quantities->where('send_by', 'LIKE', '%' . $send_by . '%');
+        if ($name)
+            $modify_quantities = $modify_quantities->whereHas('branch',function ($b)use($name,$code,$branch_tag){
+                if ($name)
+                    $b->where('name_ar', 'LIKE', '%' . $name . '%')->orWhere('name_en', 'LIKE', '%' . $name . '%');
+                if ($code)
+                    $b->where('code', 'LIKE', '%' . $code . '%');
+                if ($branch_tag)
+                    $b->whereHas('tags', function ($tag)use($branch_tag){
+                        $tag->where('name_ar', 'LIKE', '%' . $branch_tag . '%')->orWhere('name_en', 'LIKE', '%' . $branch_tag . '%');
+                    });
+            });
+        $modify_quantities = $modify_quantities->orderBy('id','DESC')->get();
+        $data = $modify_quantities->map(function ($qty){
+           return [
+              'id' => $qty->id,
+               'created_at' => date('d/m/Y H:i',strtotime($qty->created_at)),
+               'work_date' => date('d/m/Y H:i',strtotime($qty->work_date)),
+               'branch' => isset($qty->branch) ? $qty->branch->name($this->lang_code) : '',
+               'reason' => $qty->reason_name,
+           ] ;
+        });
+
+        $msg = __('msg.modify_quantities_get_success', [], $this->lang_code);
+        return $this->dataResponse($msg,$data, 200);
+    }
+
+    public function createModifyQuantities(Request $request){
+        $validator = Validator::make($request->all(), [
+            'branch_id' => 'required',
+            'reason_id' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $modify_qty = new ModifyQuantitie();
+        $modify_qty->vendor_id = $this->vendor_id;
+        $modify_qty->created_by = vendor()->first_name . ' ' . vendor()->family_name;
+        $modify_qty->branch_id = $request->branch_id;
+        $modify_qty->reason_id = $request->reason_id;
+        $modify_qty->status_id = 1;
+        $modify_qty->save();
+
+        $msg = __('msg.modify_quantities_created_success', [], $this->lang_code);
+
+        return $this->successResponse($msg,200);
+    }
+
+    public function modifyQuantityDetails(Request $request){
+        $modify_qty = ModifyQuantitie::where('vendor_id',$this->vendor_id)->where('id',$request->modify_qty_id)->first();
+        if(!$modify_qty)
+            return $this->errorResponse(__('msg.modify_quantities_not_found', [], $this->lang_code),400);
+        $data = [
+            'id' => $modify_qty->id,
+            'branch_id' => $modify_qty->branch_id,
+            'reason_id' => $modify_qty->reason_id,
+            'status_id' => $modify_qty->status_id,
+            'status_name' => $modify_qty->status_name,
+            'created_at' => date('d/m/Y H:i',strtotime($modify_qty->created_at)),
+            'work_date' => date('d/m/Y H:i',strtotime($modify_qty->work_date)),
+            'branch' => isset($modify_qty->branch) ? $modify_qty->branch->name($this->lang_code) : '',
+            'reason' => $modify_qty->reason_name,
+            'stock_materials' => isset($modify_qty->stock_materials) && count($modify_qty->stock_materials) > 0 ? $modify_qty->stock_materials->map(function ($mat){
+                return [
+                    'id' => $mat->id,
+                    'material_id' => $mat->id,
+                    'stock_name' => isset($mat->stock) ? $mat->stock->name : '',
+                    'stock_code' => isset($mat->stock) ? $mat->stock->code : '',
+                    'storage_unit' => isset($mat->stock) ? $mat->stock->storage_unit : '',
+                    'qty' => $mat->qty,
+                ];
+            }) : []
+        ];
+
+        $msg = __('msg.modify_quantities_get_success', [], $this->lang_code);
+        return $this->dataResponse($msg,$data, 200);
+    }
+
+    public function updateModifyQuantities(Request $request){
+        $modify_qty = ModifyQuantitie::where('vendor_id',$this->vendor_id)->where('id',$request->modify_qty_id)->first();
+        if(!$modify_qty)
+            return $this->errorResponse(__('msg.modify_quantities_not_found', [], $this->lang_code),400);
+
+        if ($request->branch_id)
+            $modify_qty->branch_id = $request->branch_id;
+        if ($request->reason_id)
+            $modify_qty->reason_id = $request->reason_id;
+        $modify_qty->save();
+
+        $msg = __('msg.modify_quantities_updated_success', [], $this->lang_code);
+
+        return $this->successResponse($msg,200);
+    }
+
+    public function executionModifyQuantities(Request $request){
+        $modify_qty = ModifyQuantitie::where('vendor_id',$this->vendor_id)->where('id',$request->modify_qty_id)->first();
+        if(!$modify_qty)
+            return $this->errorResponse(__('msg.modify_quantities_not_found', [], $this->lang_code),400);
+        $modify_qty->status_id = 2;
+        $modify_qty->save();
+        $msg = __('msg.modify_quantities_updated_success', [], $this->lang_code);
+
+        return $this->successResponse($msg,200);
+    }
+
+    public function addModifyQuantitiesStockMaterial(Request $request)
+    {
+        $vendor_id = 0;
+        if (auth()->guard('vendor')->check())
+            $vendor_id = $this->vendor_id;
+        elseif (auth()->guard('vendor_employee')->check())
+            $vendor_id = vendor_employee()->vendor->id;
+
+        $modify_qty = ModifyQuantitie::where('vendor_id',$this->vendor_id)->where('id',$request->modify_qty_id)->first();
+        if(!$modify_qty)
+            return $this->errorResponse(__('msg.modify_quantities_not_found', [], $this->lang_code),400);
+
+        if ($request->type = 1 && $request->stock_materials) {
+                $modify_qty_material = ModifyQuantityStockMaterial::where('modify_quantity_id', $modify_qty->id)
+                    ->where('stock_material_id', $request->stock_id)->first();
+                if (!$modify_qty_material)
+                    $modify_qty_material = new ModifyQuantityStockMaterial();
+                $modify_qty_material->modify_quantity_id = $modify_qty->id;
+                $modify_qty_material->stock_material_id = $request->stock_id;
+                $modify_qty_material->qty = $request->qty;
+                $modify_qty_material->type = 1;
+                $modify_qty_material->save();
+        }elseif ($request->type = 2){
+            $stock_materials = json_decode($request->stock_materials);
+            foreach ($stock_materials as $material) {
+                $modify_qty_material = ModifyQuantityStockMaterial::where('modify_quantity_id', $modify_qty->id)
+                    ->where('stock_material_id', $material)->first();
+                if (!$modify_qty_material)
+                    $modify_qty_material = new ModifyQuantityStockMaterial();
+                $modify_qty_material->modify_quantity_id = $modify_qty->id;
+                $modify_qty_material->stock_material_id = $material->id;
+                $modify_qty_material->qty = $material->qty;
+                $modify_qty_material->type = 1;
+                $modify_qty_material->save();
+            }
+        } elseif ($request->type = 3) {
+            if (!$request->hasFile('csv_file'))
+                return $this->errorResponse(__('msg.please_add_csv_file', [], $this->lang_code), 400);
+
+
+            $file = $request->csv_file;
+            $type = $file->getClientOriginalExtension();
+            $myfile = $file->getClientOriginalName();
+            $destinationPath = 'uploads/csv_files';
+            $file_data = $file->move(public_path($destinationPath), $myfile);
+
+            if ($type <> 'csv')
+                return $this->errorResponse(__('msg.only_csv_is_allowed', [], $this->lang_code), 400);
+            SimpleExcelReader::create($file_data->getPathName())->getRows()
+                ->each(function (array $rowProperties) use($modify_qty) {
+                    $arr_val = array_values($rowProperties)[0];
+                    if (isset($arr_val)) {
+                        $sku_item = explode(';', $arr_val);
+                        $stock_code = $sku_item[0];
+                        $stock = Stock::where('code', $stock_code)->first();
+                        if ($stock) {
+                            $modify_qty_material = ModifyQuantityStockMaterial::where('modify_quantity_id', $modify_qty->id)
+                                ->where('stock_material_id', $stock->id)->first();
+                            if (!$modify_qty_material)
+                                $modify_qty_material = new ModifyQuantityStockMaterial();
+                            $modify_qty_material->stock_purchase_order_id = $modify_qty->id;
+                            $modify_qty_material->stock_material_id = $stock->id;
+                            $modify_qty_material->type = 3;
+                            $modify_qty_material->qty = isset($sku_item[2]) && $sku_item[2] > 0 ? $sku_item[2] : 1;
+                            $modify_qty_material->save();
+                        }
+                    }
+                });
+            File::delete($file_data->getPathName());
+        }
+
+        $msg = __('msg.stocks_created_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    ###########################################################
 }

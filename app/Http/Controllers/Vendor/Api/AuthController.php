@@ -153,7 +153,7 @@ class AuthController extends Controller
         ]);
         $branch = new Branch();
         $branch->vendor_id = $vendor->id;
-        $branch->name_ar = 'Branch 1';
+        $branch->name_ar = 'فرع 1';
         $branch->name_en = 'Branch 1';
         $branch->code = 'B-' . str_pad(1, 2, "0", STR_PAD_LEFT);
         $branch->mobile = $vendor->mobile;
@@ -162,11 +162,12 @@ class AuthController extends Controller
 
         $store = new StoreHouse();
         $store->vendor_id = $vendor->id;
-        $store->name_ar = 'Store house 1';
+        $store->name_ar = 'مستودع 1';
         $store->name_en = 'Store house 1';
         $store->number = 'SH-1';
         $store->branches = 1;
         $store->status = 1;
+        $store->is_free = 1;
         $store->save();
         $token = auth('vendor')->login($vendor);
 

@@ -8,6 +8,7 @@ use App\Http\Controllers\Vendor\Api\SettingsController;
 use App\Http\Controllers\Vendor\Api\VendorController;
 use App\Http\Controllers\Vendor\Api\WarehouseController;
 use Illuminate\Support\Facades\Route;
+use Spatie\SimpleExcel\SimpleExcelWriter;
 
 /*
 |--------------------------------------------------------------------------
@@ -49,6 +50,7 @@ Route::group(['middleware' => 'JwtMiddleware','prefix' => 'vendor/v1'],function 
     Route::get('bouquets',[PlansController::class,'bouquets']);
     Route::post('bouquet-details',[PlansController::class,'bouquetDetails']);
     Route::post('subscribe-bouquet',[PlansController::class,'subscribePlan']);
+    Route::post('myfatorah-payment',[PlansController::class,'myfatorah_payment']);
     ######################### vendor data ###################
     Route::get('vendor-data',[VendorController::class,'vendorData']);
 
@@ -85,7 +87,7 @@ Route::group(['middleware' => 'JwtMiddleware','prefix' => 'vendor/v1'],function 
     Route::post('active-store-house',[WarehouseController::class,'activeStoreHouse']);
     Route::post('inactive-store-house',[WarehouseController::class,'deactiveStoreHouse']);
     Route::post('add-store-house-stock-categories',[WarehouseController::class,'addStoreHouse']);
-    Route::post('delete-stock-categories',[WarehouseController::class,'deleteStoreHouse']);
+    Route::post('delete-store-house-stock-category',[WarehouseController::class,'deleteStoreHouse']);
     Route::get('generate-store-house-code',[WarehouseController::class,'generateStoreHouseCode']);
     #################### tags ################3
     Route::get('tags',[WarehouseController::class,'tagsList']);
@@ -151,5 +153,24 @@ Route::group(['middleware' => 'JwtMiddleware','prefix' => 'vendor/v1'],function 
     Route::post('stock-purchase-order-change-status-cancel',[WarehouseController::class,'StockPurchaseOrderChangeStatusCanel']);
     Route::post('stock-purchase-order-change-status-close',[WarehouseController::class,'StockPurchaseOrderChangeStatusClose']);
     Route::post('add-purchase-order-material',[WarehouseController::class,'addStockPurchaseOrderStockMaterial']);
+    Route::post('update-purchase-order-material-qty',[WarehouseController::class,'updatePurchaseOrderStockMaterialQty']);
+    #################################### productions #####################################
+    Route::post('stock-productions',[WarehouseController::class,'stockProductions']);
+    Route::post('create-stock-production',[WarehouseController::class,'createStockProduction']);
+    Route::post('update-stock-production',[WarehouseController::class,'updateStockProduction']);
+    Route::post('stock-production-update-status',[WarehouseController::class,'stockProductionUpdateStatus']);
+    Route::post('stock-production-details',[WarehouseController::class,'stockProductionDetails']);
+    Route::post('production-add-stock-material',[WarehouseController::class,'productionAddStockMaterial']);
+    ############################# modify qty ##########################################
+    Route::post('modify-quantities',[WarehouseController::class,'modifyQuantities']);
+    Route::post('createModify-quantities',[WarehouseController::class,'createModifyQuantities']);
+    Route::post('modify-quantityDetails',[WarehouseController::class,'modifyQuantityDetails']);
+    Route::post('update-modify-quantities',[WarehouseController::class,'updateModifyQuantities']);
+    Route::post('execution-modify-quantities',[WarehouseController::class,'executionModifyQuantities']);
+    Route::post('add-modify-quantities-stock-material',[WarehouseController::class,'addModifyQuantitiesStockMaterial']);
+    ############################## vendor reasons #########################################
+    Route::get('vendor-reasons',[AdminstarionController::class,'vendorReasons']);
+    Route::post('create-reason',[AdminstarionController::class,'createReason']);
+    Route::post('update-reason',[AdminstarionController::class,'updateReason']);
 
 });

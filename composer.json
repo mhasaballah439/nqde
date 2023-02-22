@@ -30,7 +30,8 @@
             "Database\\Seeders\\": "database/seeders/"
         },
         "files": [
-            "app/Helpers/General.php"
+            "app/Helpers/General.php",
+            "app/Helpers/Myfatorah.php"
         ]
     },
     "autoload-dev": {
@@ -61,7 +62,8 @@
     "config": {
         "optimize-autoloader": true,
         "preferred-install": "dist",
-        "sort-packages": true
+        "sort-packages": true,
+        "platform-check": false
     },
     "minimum-stability": "dev",
     "prefer-stable": true
