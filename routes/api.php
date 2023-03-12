@@ -5,6 +5,7 @@ use App\Http\Controllers\Vendor\Api\AuthController;
 use App\Http\Controllers\Vendor\Api\PlansController;
 use App\Http\Controllers\Vendor\Api\ProductsController;
 use App\Http\Controllers\Vendor\Api\SettingsController;
+use App\Http\Controllers\Vendor\Api\UsersController;
 use App\Http\Controllers\Vendor\Api\VendorController;
 use App\Http\Controllers\Vendor\Api\WarehouseController;
 use Illuminate\Support\Facades\Route;
@@ -163,14 +164,107 @@ Route::group(['middleware' => 'JwtMiddleware','prefix' => 'vendor/v1'],function 
     Route::post('production-add-stock-material',[WarehouseController::class,'productionAddStockMaterial']);
     ############################# modify qty ##########################################
     Route::post('modify-quantities',[WarehouseController::class,'modifyQuantities']);
-    Route::post('createModify-quantities',[WarehouseController::class,'createModifyQuantities']);
-    Route::post('modify-quantityDetails',[WarehouseController::class,'modifyQuantityDetails']);
+    Route::post('create-modify-quantities',[WarehouseController::class,'createModifyQuantities']);
+    Route::post('modify-quantity-details',[WarehouseController::class,'modifyQuantityDetails']);
     Route::post('update-modify-quantities',[WarehouseController::class,'updateModifyQuantities']);
+    Route::post('delete-modify-quantities',[WarehouseController::class,'deleteModifyQuantities']);
     Route::post('execution-modify-quantities',[WarehouseController::class,'executionModifyQuantities']);
     Route::post('add-modify-quantities-stock-material',[WarehouseController::class,'addModifyQuantitiesStockMaterial']);
+    ############################# modify qty ##########################################
+    Route::post('modify-costs',[WarehouseController::class,'modifyCosts']);
+    Route::post('create-modify-cost',[WarehouseController::class,'createModifyCost']);
+    Route::post('modify-cost-details',[WarehouseController::class,'modifyCostDetails']);
+    Route::post('update-modify-cost',[WarehouseController::class,'updateModifyCost']);
+    Route::post('delete-modify-cost',[WarehouseController::class,'deleteModifyCost']);
+    Route::post('execution-modify-cost',[WarehouseController::class,'executionModifyCost']);
+    Route::post('add-modify-cost-stock-material',[WarehouseController::class,'addModifyCostsStockMaterial']);
+    ############################# users ##########################################
+    Route::post('users',[UsersController::class,'users']);
+    Route::post('create-user',[UsersController::class,'createUser']);
+    Route::post('update-user',[UsersController::class,'updateUser']);
+    Route::post('add-user-tags',[UsersController::class,'addUserTags']);
+    Route::post('delete-user-tags',[UsersController::class,'deleteUserTag']);
+    Route::post('user-details',[UsersController::class,'userDetails']);
+    Route::post('user-add-address',[UsersController::class,'addUserAddress']);
+    Route::post('user-update-address',[UsersController::class,'updateUserAddress']);
+    Route::post('user-delete-address',[UsersController::class,'deleteUserAddress']);
+    Route::post('user-active-deferred-account',[UsersController::class,'activeDeferredAccount']);
+    Route::post('user-active-black-list',[UsersController::class,'activeBlackList']);
+    Route::post('user-send-message',[UsersController::class,'userSendEmailMessage']);
     ############################## vendor reasons #########################################
     Route::get('vendor-reasons',[AdminstarionController::class,'vendorReasons']);
     Route::post('create-reason',[AdminstarionController::class,'createReason']);
     Route::post('update-reason',[AdminstarionController::class,'updateReason']);
+    ######################## Taxes ########################################################
+    Route::get('taxes',[AdminstarionController::class,'taxes']);
+    Route::post('add-tax',[AdminstarionController::class,'addTax']);
+    Route::post('update-tax',[AdminstarionController::class,'updateTax']);
+    Route::post('delete-tax',[AdminstarionController::class,'deleteTax']);
+    Route::get('taxes-group',[AdminstarionController::class,'taxesGroup']);
+    Route::post('add-tax-group',[AdminstarionController::class,'addTaxGroup']);
+    Route::post('delete-tax-group',[AdminstarionController::class,'deleteTaxGroup']);
+    ####################### Additions ##################################
+    Route::post('additions',[ProductsController::class,'additions']);
+    Route::get('generate-addition-code',[ProductsController::class,'generateAdditionCode']);
+    Route::post('add-new-addition',[ProductsController::class,'addNewAddition']);
+    Route::post('update-addition',[ProductsController::class,'updateAddition']);
+    Route::post('delete-addition',[ProductsController::class,'deleteAddition']);
+    Route::post('sort-additions',[ProductsController::class,'sortAdditions']);
+    ##################### addition options #############################
+    Route::post('addition-options',[ProductsController::class,'additionOptions']);
+    Route::post('add-addition-options',[ProductsController::class,'addAdditionOptions']);
+    Route::post('update-addition-options',[ProductsController::class,'updateAdditionOptions']);
+    Route::post('delete-addition-options',[ProductsController::class,'deleteAdditionOptions']);
+    Route::get('generate-addition-option-code',[ProductsController::class,'generateAdditionOptionCode']);
+    Route::post('addition-options-details',[ProductsController::class,'additionOptionsDetails']);
+    Route::post('add-addition-option-stock',[ProductsController::class,'addAdditionOptionStock']);
+    Route::post('delete-addition-option-stock',[ProductsController::class,'deleteAdditionOptionStock']);
+    Route::post('add-addition-options-special-branch-price',[ProductsController::class,'addAdditionOptionsSpecialBranchPrice']);
+    Route::post('add-addition-options-branch-dactive',[ProductsController::class,'addAdditionOptionsBranchDactive']);
+    ######################### gift cards ####################
+    Route::post('gift-cards',[ProductsController::class,'getGiftCards']);
+    Route::get('generate-gift-card-code',[ProductsController::class,'generateGiftCardCode']);
+    Route::get('generate-gift-card-number',[ProductsController::class,'genrateGiftCardNumber']);
+    Route::post('add-gift-card',[ProductsController::class,'addGiftCard']);
+    Route::post('update-gift-card',[ProductsController::class,'updateGiftCard']);
+    Route::post('delete-gift-card',[ProductsController::class,'deleteGiftCard']);
+    Route::post('gift-card-details',[ProductsController::class,'giftCardDetails']);
+    Route::post('add-gift-card-tags',[ProductsController::class,'addGiftCardTags']);
+    Route::post('delete-gift-card-tag',[ProductsController::class,'deleteGiftCardTag']);
+    Route::post('add-gift-card-branch',[ProductsController::class,'addGiftCardBranch']);
+    ##################### products #############################
+    Route::post('products',[ProductsController::class,'products']);
+    Route::get('generate-product-code',[ProductsController::class,'generateProductCode']);
+    Route::post('create-product',[ProductsController::class,'createProduct']);
+    Route::post('update-product',[ProductsController::class,'updateProduct']);
+    Route::post('delete-product',[ProductsController::class,'deleteProduct']);
+    Route::post('product-details',[ProductsController::class,'productDetails']);
+    Route::post('add-product-tags',[ProductsController::class,'addProductTags']);
+    Route::post('delete-product-tag',[ProductsController::class,'deleteProductTag']);
+    Route::post('add-product-additions',[ProductsController::class,'addProductAdditions']);
+    Route::post('update-product-addition',[ProductsController::class,'updateProductAdditions']);
+    Route::post('delete-product-addition',[ProductsController::class,'deleteProductAdditions']);
+    Route::post('add-stock-components',[ProductsController::class,'addStockComponents']);
+    Route::post('update-stock-components',[ProductsController::class,'updateStockComponents']);
+    Route::post('delete-stock-components',[ProductsController::class,'deleteStockComponents']);
+    Route::post('add-product-branch-price',[ProductsController::class,'addProductSpecialBranchPrice']);
+    Route::post('delete-product-branch-price',[ProductsController::class,'deleteProductSpecialBranchPrice']);
+    Route::post('add-product-branch-dactive',[ProductsController::class,'addProductSpecialBranchDactive']);
+    Route::post('add-product-traits',[ProductsController::class,'addProductTraits']);
+    Route::post('delete-product-trait',[ProductsController::class,'deleteProductTrait']);
+    ############################ product colections #########################
+    Route::post('product-collections',[ProductsController::class,'productCollections']);
+    Route::get('generate-product-collection-code',[ProductsController::class,'generateProductCollectionCode']);
+    Route::post('create-product-collection',[ProductsController::class,'createProductCollection']);
+    Route::post('update-product-collection',[ProductsController::class,'updateProductCollection']);
+    Route::post('product-collection-details',[ProductsController::class,'productCollectionDetails']);
+    Route::post('delete-product-collection',[ProductsController::class,'deleteProductCollection']);
+    Route::post('add-product-collection-tags',[ProductsController::class,'addProductCollectionTags']);
+    Route::post('delete-product-collection-tag',[ProductsController::class,'deleteProductCollectionTag']);
+    Route::post('add-product-collection-branch-price',[ProductsController::class,'addProductCollectionBranchPrice']);
+    Route::post('delete-product-collection-branch-price',[ProductsController::class,'deleteProductCollectionBranchPrice']);
+    Route::post('add-product-collection-branch-dactive',[ProductsController::class,'addProductCollectionBranchDactive']);
+    Route::post('add-product-collection-products',[ProductsController::class,'addProductCollectionProducts']);
+    Route::post('delete-product-collection-products',[ProductsController::class,'deleteProductCollectionProducts']);
 
 });

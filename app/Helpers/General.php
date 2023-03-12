@@ -27,14 +27,21 @@ function vendor_employee(){
     return auth()->guard('vendor_employee')->user();
 }
 
-function upload_file($image,$folder,$file = null){
-    if ($file != null){
+function upload_vendor_file($image,$folder,$file,$modal,$vendor_id,$mediable_id){
+    if ($file && $file->file_path){
         $filename = public_path() . '' . $file;
         File::delete($filename);
     }
     $image_name = $image->hashName();
     $image->move(public_path('/uploads/'.$folder."/"), $image_name);
     $filePath = "/uploads/".$folder."/". $image_name;
+    $vendor_file = new \App\Models\VendorMedia();
+    $vendor_file->vendor_id = $vendor_id;
+    $vendor_file->mediable_type = $modal;
+    $vendor_file->file_name = $image->getClientOriginalName();
+    $vendor_file->mediable_id = $mediable_id;
+    $vendor_file->file_path = $filePath;
+    $vendor_file->save();
 
     return $filePath;
 }

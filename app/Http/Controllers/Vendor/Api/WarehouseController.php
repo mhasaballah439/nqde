@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Vendor\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ModifyCost;
+use App\Models\ModifyCostStockMaterial;
 use App\Models\ModifyQuantitie;
 use App\Models\ModifyQuantityStockMaterial;
 use App\Models\ProductionStockMaterial;
@@ -37,9 +39,9 @@ class WarehouseController extends Controller
         $this->lang_code = \request()->get('lang') ? \request()->get('lang') : get_default_languages();
 
         if (auth()->guard('vendor')->check())
-            $vendor_id = vendor()->id;
+            $this->vendor_id = vendor()->id;
         elseif (auth()->guard('vendor_employee')->check())
-            $vendor_id = vendor_employee()->vendor->id;
+            $this->vendor_id = vendor_employee()->vendor->id;
 
     }
 
@@ -289,7 +291,7 @@ class WarehouseController extends Controller
     public function generateStoreHouseCode()
     {
         $last_item_id = 0;
-        $last_item = StoreHouse::where('vendor_id', $this->vendor_id)->withTrashed()->orderBy('id', 'DESC')->first();
+        $last_item = StoreHouse::where('vendor_id', $this->vendor_id)->orderBy('id', 'DESC')->first();
         if ($last_item) {
             $num = explode('-', $last_item->number);
             $last_item_id = $num[1];
@@ -310,7 +312,7 @@ class WarehouseController extends Controller
             return $this->errorResponse($validator->errors()->first(), 400);
 
         $last_item_id = 0;
-        $last_item = StoreHouse::where('vendor_id', $this->vendor_id)->withTrashed()->orderBy('id', 'DESC')->first();
+        $last_item = StoreHouse::where('vendor_id', $this->vendor_id)->orderBy('id', 'DESC')->first();
         if ($last_item) {
             $num = explode('-', $last_item->number);
             $last_item_id = $num[1];
@@ -763,18 +765,23 @@ class WarehouseController extends Controller
 
     public function addTagStock(Request $request)
     {
-        $stock_id = $request->get('stock_id');
-        $tag_id = $request->get('tag_id');
-        $stok_tag = StockTag::where('stock_id', $stock_id)->where('tag_id', $tag_id)->first();
-        if (!$stok_tag)
-            $stok_tag = new StockTag();
-        $stok_tag->stock_id = $stock_id;
-        $stok_tag->tag_id = $tag_id;
-        $stok_tag->save();
+        $stock_id = $request->stock_id;
+        if ($request->tags) {
+            $tags = json_decode($request->tags);
+            if (count($tags) > 0) {
+                foreach ($tags as $tag) {
+                    $stok_tag = StockTag::where('stock_id', $stock_id)->where('tag_id', $tag)->first();
+                    if (!$stok_tag)
+                        $stok_tag = new StockTag();
+                    $stok_tag->stock_id = $stock_id;
+                    $stok_tag->tag_id = $tag;
+                    $stok_tag->save();
+                }
+            }
+            $msg = __('msg.tag_add_success', [], $this->lang_code);
 
-        $msg = __('msg.tag_add_success', [], $this->lang_code);
-
-        return $this->successResponse($msg, 200);
+            return $this->successResponse($msg, 200);
+        }
     }
 
     public function deleteTagStock(Request $request)
@@ -965,18 +972,20 @@ class WarehouseController extends Controller
 
     public function addSupplierTag(Request $request)
     {
-        $tag_id = $request->get('tag_id');
-        $supplier_id = $request->get('supplier_id');
-        $supplier_tag = SupplierTag::where('tag_id', $tag_id)->where('supplier_id', $supplier_id)->first();
-        if (!$supplier_tag)
-            $supplier_tag = new SupplierTag();
-        $supplier_tag->tag_id = $tag_id;
-        $supplier_tag->supplier_id = $supplier_id;
-        $supplier_tag->save();
-
-        $msg = __('msg.tag_add_success', [], $this->lang_code);
-
-        return $this->successResponse($msg, 200);
+        if ($request->tags) {
+            if (is_array($request->tags)) {
+                foreach ($request->tags as $tag) {
+                    $supplier_tag = SupplierTag::where('tag_id', $tag)->where('supplier_id', $request->supplier_id)->first();
+                    if (!$supplier_tag)
+                        $supplier_tag = new SupplierTag();
+                    $supplier_tag->tag_id = $tag;
+                    $supplier_tag->supplier_id = $request->supplier_id;
+                    $supplier_tag->save();
+                }
+                $msg = __('msg.tag_add_success', [], $this->lang_code);
+            }
+            return $this->successResponse($msg, 200);
+        }
     }
 
     public function deleteSupplierTag(Request $request)
@@ -995,14 +1004,20 @@ class WarehouseController extends Controller
 
     public function addSupplierStock(Request $request)
     {
-        $stock_id = $request->get('stock_id');
-        $supplier_id = $request->get('supplier_id');
-        $stok_supplier = StockSupplier::where('stock_id', $stock_id)->where('supplier_id', $supplier_id)->first();
-        if (!$stok_supplier)
-            $stok_supplier = new StockSupplier();
-        $stok_supplier->stock_id = $stock_id;
-        $stok_supplier->supplier_id = $supplier_id;
-        $stok_supplier->save();
+
+        $supplier_id = $request->supplier_id;
+        $stocks = $request->stocks;
+        if ($stocks){
+            foreach ($stocks as $stock){
+                $stok_supplier = StockSupplier::where('stock_id', $stock)->where('supplier_id', $supplier_id)->first();
+                if (!$stok_supplier)
+                    $stok_supplier = new StockSupplier();
+                $stok_supplier->stock_id = $stock;
+                $stok_supplier->supplier_id = $supplier_id;
+                $stok_supplier->save();
+
+            }
+        }
 
         $msg = __('msg.tag_add_success', [], $this->lang_code);
 
@@ -1831,7 +1846,7 @@ class WarehouseController extends Controller
                'created_at' => date('d/m/Y H:i',strtotime($qty->created_at)),
                'work_date' => date('d/m/Y H:i',strtotime($qty->work_date)),
                'branch' => isset($qty->branch) ? $qty->branch->name($this->lang_code) : '',
-               'reason' => $qty->reason_name,
+               'reason' => isset($qty->reason) ? $qty->reason->name($this->lang_code) : '',
            ] ;
         });
 
@@ -1874,11 +1889,11 @@ class WarehouseController extends Controller
             'created_at' => date('d/m/Y H:i',strtotime($modify_qty->created_at)),
             'work_date' => date('d/m/Y H:i',strtotime($modify_qty->work_date)),
             'branch' => isset($modify_qty->branch) ? $modify_qty->branch->name($this->lang_code) : '',
-            'reason' => $modify_qty->reason_name,
+            'reason' => isset($qty->reason) ? $qty->reason->name($this->lang_code) : '',
             'stock_materials' => isset($modify_qty->stock_materials) && count($modify_qty->stock_materials) > 0 ? $modify_qty->stock_materials->map(function ($mat){
                 return [
                     'id' => $mat->id,
-                    'material_id' => $mat->id,
+                    'material_id' => isset($mat->stock) ? $mat->stock->id : 0,
                     'stock_name' => isset($mat->stock) ? $mat->stock->name : '',
                     'stock_code' => isset($mat->stock) ? $mat->stock->code : '',
                     'storage_unit' => isset($mat->stock) ? $mat->stock->storage_unit : '',
@@ -1907,11 +1922,24 @@ class WarehouseController extends Controller
         return $this->successResponse($msg,200);
     }
 
+    public function deleteModifyQuantities(Request $request){
+        $modify_qty = ModifyQuantitie::where('vendor_id',$this->vendor_id)->where('id',$request->modify_qty_id)->first();
+        if(!$modify_qty)
+            return $this->errorResponse(__('msg.modify_quantities_not_found', [], $this->lang_code),400);
+
+        $modify_qty->delete();
+
+        $msg = __('msg.modify_quantities_deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg,200);
+    }
+
     public function executionModifyQuantities(Request $request){
         $modify_qty = ModifyQuantitie::where('vendor_id',$this->vendor_id)->where('id',$request->modify_qty_id)->first();
         if(!$modify_qty)
             return $this->errorResponse(__('msg.modify_quantities_not_found', [], $this->lang_code),400);
         $modify_qty->status_id = 2;
+        $modify_qty->work_date = date('Y-m-d H:i');
         $modify_qty->save();
         $msg = __('msg.modify_quantities_updated_success', [], $this->lang_code);
 
@@ -1920,17 +1948,11 @@ class WarehouseController extends Controller
 
     public function addModifyQuantitiesStockMaterial(Request $request)
     {
-        $vendor_id = 0;
-        if (auth()->guard('vendor')->check())
-            $vendor_id = $this->vendor_id;
-        elseif (auth()->guard('vendor_employee')->check())
-            $vendor_id = vendor_employee()->vendor->id;
-
         $modify_qty = ModifyQuantitie::where('vendor_id',$this->vendor_id)->where('id',$request->modify_qty_id)->first();
         if(!$modify_qty)
             return $this->errorResponse(__('msg.modify_quantities_not_found', [], $this->lang_code),400);
 
-        if ($request->type = 1 && $request->stock_materials) {
+        if ($request->type = 1 && $request->stock_id) {
                 $modify_qty_material = ModifyQuantityStockMaterial::where('modify_quantity_id', $modify_qty->id)
                     ->where('stock_material_id', $request->stock_id)->first();
                 if (!$modify_qty_material)
@@ -1940,15 +1962,15 @@ class WarehouseController extends Controller
                 $modify_qty_material->qty = $request->qty;
                 $modify_qty_material->type = 1;
                 $modify_qty_material->save();
-        }elseif ($request->type = 2){
+        }elseif ($request->type = 2 && $request->stock_materials){
             $stock_materials = json_decode($request->stock_materials);
             foreach ($stock_materials as $material) {
                 $modify_qty_material = ModifyQuantityStockMaterial::where('modify_quantity_id', $modify_qty->id)
-                    ->where('stock_material_id', $material)->first();
+                    ->where('stock_material_id', $material->stock_material_id)->first();
                 if (!$modify_qty_material)
                     $modify_qty_material = new ModifyQuantityStockMaterial();
                 $modify_qty_material->modify_quantity_id = $modify_qty->id;
-                $modify_qty_material->stock_material_id = $material->id;
+                $modify_qty_material->stock_material_id = $material->stock_material_id;
                 $modify_qty_material->qty = $material->qty;
                 $modify_qty_material->type = 1;
                 $modify_qty_material->save();
@@ -1978,11 +2000,221 @@ class WarehouseController extends Controller
                                 ->where('stock_material_id', $stock->id)->first();
                             if (!$modify_qty_material)
                                 $modify_qty_material = new ModifyQuantityStockMaterial();
-                            $modify_qty_material->stock_purchase_order_id = $modify_qty->id;
+                            $modify_qty_material->modify_quantity_id = $modify_qty->id;
                             $modify_qty_material->stock_material_id = $stock->id;
-                            $modify_qty_material->type = 3;
                             $modify_qty_material->qty = isset($sku_item[2]) && $sku_item[2] > 0 ? $sku_item[2] : 1;
+                            $modify_qty_material->type = 3;
                             $modify_qty_material->save();
+                        }
+                    }
+                });
+            File::delete($file_data->getPathName());
+        }
+
+        $msg = __('msg.stocks_created_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    ###########################################################
+    ####################### modify cost ########################33
+    public function modifyCosts(Request $request)
+    {
+        $created_at = $request->created_at;
+        $work_date = $request->work_date;
+        $status = $request->status;
+        $code = $request->code;
+        $branch_tag = $request->branch_tag;
+        $creator = $request->creator;
+        $sender = $request->sender;
+        $name = $request->name;
+
+        $modify_costs = ModifyCost::where('vendor_id', $this->vendor_id);
+        if ($status)
+            $modify_costs = $modify_costs->where('status_id', $status);
+        if ($created_at)
+            $modify_costs = $modify_costs->whereDate('status_id', $created_at);
+        if ($work_date)
+            $modify_costs = $modify_costs->whereDate('status_id', $work_date);
+        if ($creator)
+            $modify_costs = $modify_costs->where('created_by', 'LIKE', '%' . $creator . '%');
+        if ($sender)
+            $modify_costs = $modify_costs->where('send_by', 'LIKE', '%' . $sender . '%');
+        if ($name)
+            $modify_costs = $modify_costs->whereHas('branch',function ($b)use($name,$code,$branch_tag){
+                if ($name)
+                    $b->where('name_ar', 'LIKE', '%' . $name . '%')->orWhere('name_en', 'LIKE', '%' . $name . '%');
+                if ($code)
+                    $b->where('code', 'LIKE', '%' . $code . '%');
+                if ($branch_tag)
+                    $b->whereHas('tags', function ($tag)use($branch_tag){
+                        $tag->where('name_ar', 'LIKE', '%' . $branch_tag . '%')->orWhere('name_en', 'LIKE', '%' . $branch_tag . '%');
+                    });
+            });
+        $modify_costs = $modify_costs->orderBy('id','DESC')->get();
+        $data = $modify_costs->map(function ($cost){
+           return [
+              'id' => $cost->id,
+               'created_at' => date('d/m/Y H:i',strtotime($cost->created_at)),
+               'work_date' => date('d/m/Y H:i',strtotime($cost->work_date)),
+               'branch' => isset($cost->branch) ? $cost->branch->name($this->lang_code) : '',
+               'creator' => $cost->creator,
+               'sender' => $cost->sender,
+           ] ;
+        });
+
+        $msg = __('msg.modify_costs_get_success', [], $this->lang_code);
+        return $this->dataResponse($msg,$data, 200);
+    }
+
+    public function createModifyCost(Request $request){
+        $validator = Validator::make($request->all(), [
+            'branch_id' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $modify_cost = new ModifyCost();
+        $modify_cost->vendor_id = $this->vendor_id;
+        $modify_cost->creator = vendor()->first_name . ' ' . vendor()->family_name;
+        $modify_cost->branch_id = $request->branch_id;
+        $modify_cost->status_id = 1;
+        $modify_cost->save();
+
+        $msg = __('msg.modify_cost_created_success', [], $this->lang_code);
+
+        return $this->successResponse($msg,200);
+    }
+
+    public function modifyCostDetails(Request $request){
+        $modify_cost = ModifyCost::where('vendor_id',$this->vendor_id)
+            ->where('id',$request->modify_cost_id)->first();
+        if(!$modify_cost)
+            return $this->errorResponse(__('msg.modify_cost_not_found', [], $this->lang_code),400);
+        $data = [
+            'id' => $modify_cost->id,
+            'branch_id' => $modify_cost->branch_id,
+            'status_id' => $modify_cost->status_id,
+            'status_name' => $modify_cost->status_name,
+            'created_at' => date('d/m/Y H:i',strtotime($modify_cost->created_at)),
+            'work_date' => date('d/m/Y H:i',strtotime($modify_cost->work_date)),
+            'branch' => isset($modify_cost->branch) ? $modify_cost->branch->name($this->lang_code) : '',
+            'creator' => $modify_cost->creator,
+            'sender' => $modify_cost->sender,
+            'stock_materials' => isset($modify_cost->stock_materials) && count($modify_cost->stock_materials) > 0 ? $modify_cost->stock_materials->map(function ($mat){
+                return [
+                    'id' => $mat->id,
+                    'material_id' => isset($mat->stock) ? $mat->stock->id : 0,
+                    'stock_name' => isset($mat->stock) ? $mat->stock->name : '',
+                    'stock_code' => isset($mat->stock) ? $mat->stock->code : '',
+                    'storage_unit' => isset($mat->stock) ? $mat->stock->storage_unit : '',
+                    'cost' => (float)$mat->cost,
+                ];
+            }) : []
+        ];
+
+        $msg = __('msg.modify_cost_get_success', [], $this->lang_code);
+        return $this->dataResponse($msg,$data, 200);
+    }
+
+    public function updateModifyCost(Request $request){
+        $modify_cost = ModifyCost::where('vendor_id',$this->vendor_id)->where('id',$request->modify_cost_id)->first();
+        if(!$modify_cost)
+            return $this->errorResponse(__('msg.modify_cost_not_found', [], $this->lang_code),400);
+
+        if ($request->branch_id)
+            $modify_cost->branch_id = $request->branch_id;
+        $modify_cost->save();
+
+        $msg = __('msg.modify_cost_updated_success', [], $this->lang_code);
+
+        return $this->successResponse($msg,200);
+    }
+
+    public function deleteModifyCost(Request $request){
+        $modify_cost = ModifyCost::where('vendor_id',$this->vendor_id)->where('id',$request->modify_cost_id)->first();
+        if(!$modify_cost)
+            return $this->errorResponse(__('msg.modify_quantities_not_found', [], $this->lang_code),400);
+
+        $modify_cost->delete();
+
+        $msg = __('msg.modify_cost_deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg,200);
+    }
+
+    public function executionModifyCost(Request $request){
+        $modify_cost = ModifyCost::where('vendor_id',$this->vendor_id)->where('id',$request->modify_cost_id)->first();
+        if(!$modify_cost)
+            return $this->errorResponse(__('msg.modify_cost_not_found', [], $this->lang_code),400);
+        $modify_cost->status_id = 2;
+        $modify_cost->work_date = date('Y-m-d H:i');
+        $modify_cost->save();
+        $msg = __('msg.modify_cost_updated_success', [], $this->lang_code);
+
+        return $this->successResponse($msg,200);
+    }
+
+    public function addModifyCostsStockMaterial(Request $request)
+    {
+
+        $modify_cost = ModifyCost::where('vendor_id',$this->vendor_id)->where('id',$request->modify_cost_id)->first();
+        if(!$modify_cost)
+            return $this->errorResponse(__('msg.modify_cost_not_found', [], $this->lang_code),400);
+
+        if ($request->type = 1 && $request->stock_id) {
+                $modify_cost_material = ModifyCostStockMaterial::where('modify_cost_id', $modify_cost->id)
+                    ->where('stock_material_id', $request->stock_id)->first();
+                if (!$modify_cost_material)
+                    $modify_cost_material = new ModifyCostStockMaterial();
+                $modify_cost_material->modify_cost_id = $modify_cost->id;
+                $modify_cost_material->stock_material_id = $request->stock_id;
+                $modify_cost_material->cost = $request->cost ? $request->cost : 0;
+                $modify_cost_material->type = 1;
+                $modify_cost_material->save();
+        }elseif ($request->type = 2 && $request->stock_materials){
+            $stock_materials = json_decode($request->stock_materials);
+            foreach ($stock_materials as $material) {
+                $modify_cost_material = ModifyCostStockMaterial::where('modify_cost_id', $modify_cost->id)
+                    ->where('stock_material_id', $material->stock_material_id)->first();
+                if (!$modify_cost_material)
+                    $modify_cost_material = new ModifyCostStockMaterial();
+                $modify_cost_material->modify_cost_id = $modify_cost->id;
+                $modify_cost_material->stock_material_id = $material->stock_material_id;
+                $modify_cost_material->cost = $material->cost;
+                $modify_cost_material->type = 1;
+                $modify_cost_material->save();
+            }
+        } elseif ($request->type = 3) {
+            if (!$request->hasFile('csv_file'))
+                return $this->errorResponse(__('msg.please_add_csv_file', [], $this->lang_code), 400);
+
+
+            $file = $request->csv_file;
+            $type = $file->getClientOriginalExtension();
+            $myfile = $file->getClientOriginalName();
+            $destinationPath = 'uploads/csv_files';
+            $file_data = $file->move(public_path($destinationPath), $myfile);
+
+            if ($type <> 'csv')
+                return $this->errorResponse(__('msg.only_csv_is_allowed', [], $this->lang_code), 400);
+            SimpleExcelReader::create($file_data->getPathName())->getRows()
+                ->each(function (array $rowProperties) use($modify_cost) {
+                    $arr_val = array_values($rowProperties)[0];
+                    if (isset($arr_val)) {
+                        $sku_item = explode(';', $arr_val);
+                        $stock_code = $sku_item[0];
+                        $stock = Stock::where('code', $stock_code)->first();
+                        if ($stock) {
+                            $modify_cost_material = ModifyCostStockMaterial::where('stock_material_id', $modify_cost->id)
+                                ->where('stock_material_id', $stock->id)->first();
+                            if (!$modify_cost_material)
+                                $modify_cost_material = new ModifyCostStockMaterial();
+                            $modify_cost_material->stock_material_id = $modify_cost->id;
+                            $modify_cost_material->stock_material_id = $stock->id;
+                            $modify_cost_material->cost = isset($sku_item[2]) && $sku_item[2] > 0 ? $sku_item[2] : 1;
+                            $modify_cost_material->type = 3;
+                            $modify_cost_material->save();
                         }
                     }
                 });

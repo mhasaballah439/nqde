@@ -11,6 +11,9 @@ use App\Models\EmployeeBranches;
 use App\Models\EmployeesRool;
 use App\Models\EmployeeTags;
 use App\Models\Permitions;
+use App\Models\Tax;
+use App\Models\TaxGroup;
+use App\Models\TaxGroupTaxes;
 use App\Models\Vendor;
 use App\Models\VendorEmployee;
 use App\Models\VendorReason;
@@ -31,9 +34,9 @@ class AdminstarionController extends Controller
     {
         $this->lang_code = \request()->get('lang') ? \request()->get('lang') : get_default_languages();
         if (auth()->guard('vendor')->check())
-            $vendor_id = vendor()->id;
+            $this->vendor_id = vendor()->id;
         elseif (auth()->guard('vendor_employee')->check())
-            $vendor_id = vendor_employee()->vendor->id;
+            $this->vendor_id = vendor_employee()->vendor->id;
     }
     /**
      * Store a new user.
@@ -87,6 +90,7 @@ class AdminstarionController extends Controller
                 'id' => $branch->id,
                 'name' => $branch->name($this->lang_code),
                 'tax_number' => $branch->tax_number,
+                'is_free' => $branch->is_free,
                 'code' => $branch->code,
                 'tax_groups' => $branch->tax_groups,
                 'tax_registration_name' => $branch->tax_registration_name,
@@ -123,7 +127,10 @@ class AdminstarionController extends Controller
             $last_item_id = $num[1];
         }
 
-        $directData = $this->myfatorah_payment($request,(float)vendor()->active_plan->branch_price);
+        if ($request->card_id || $request->card_number)
+            $directData = $this->myfatorah_payment($request,(float)vendor()->active_plan->branch_price);
+        else
+            return $this->errorResponse(__('msg.please_add_payment', [], $this->lang_code), 400);
 
         if (isset($directData->Status) && $directData->Status == 'SUCCESS') {
             for ($i = 1 ; $i<= $request->num_branches ; $i++) {
@@ -246,17 +253,23 @@ class AdminstarionController extends Controller
 
     public function addBranchTag(Request $request)
     {
-        $tag = BranchTag::where('branch_id', $request->get('branch_id'))->where('tag_id', $request->get('tag_id'))->first();
-        if ($tag)
-            return $this->errorResponse(__('msg.tag_is_already_in_branch', [], $this->lang_code), 400);
-        $tag = new BranchTag();
-        $tag->branch_id = $request->get('branch_id');
-        $tag->tag_id = $request->get('tag_id');
-        $tag->save();
+        if ($request->tags) {
+            $tags = json_decode($request->tags);
+            if (count($tags) > 0) {
+                foreach ($tags as $tag) {
+                    $tag = BranchTag::where('branch_id',$request->branch_id)->where('tag_id', $tag)->first();
+                    if ($tag)
+                        return $this->errorResponse(__('msg.tag_is_already_in_branch', [], $this->lang_code), 400);
+                    $tag = new BranchTag();
+                    $tag->branch_id = $request->branch_id;
+                    $tag->tag_id = $tag;
+                    $tag->save();
+                }
+            }
+            $msg = __('msg.tag_add_success', [], $this->lang_code);
 
-        $msg = __('msg.tag_add_success', [], $this->lang_code);
-
-        return $this->successResponse($msg, 200);
+            return $this->successResponse($msg, 200);
+        }
     }
 
     public function deleteBranchTag(Request $request)
@@ -646,8 +659,7 @@ class AdminstarionController extends Controller
                 foreach ($tags as $tag) {
                     $emp_tag = EmployeeTags::where('employee_id', $request->employee_id)
                         ->where('tag_id', $tag)->first();
-                    if ($emp_tag)
-                        return $this->errorResponse(__('msg.tag_is_already_add_employee', [], $this->lang_code), 400);
+                    if (!$emp_tag)
                     $emp_tag = new EmployeeTags();
                     $emp_tag->employee_id = $request->employee_id;
                     $emp_tag->tag_id = $tag;
@@ -678,14 +690,20 @@ class AdminstarionController extends Controller
 
     public function addEmploeeBranche(Request $request)
     {
-        $emp_branch = EmployeeBranches::where('employee_id', $request->get('employee_id'))
-            ->where('branch_id', $request->get('branch_id'))->first();
-        if ($emp_branch)
-            return $this->errorResponse(__('msg.branch_is_already_in_employee', [], $this->lang_code), 400);
-        $emp_branch = new EmployeeBranches();
-        $emp_branch->employee_id = $request->get('employee_id');
-        $emp_branch->branch_id = $request->get('branch_id');
-        $emp_branch->save();
+        if ($request->branches) {
+            $branches = json_decode($request->branches);
+            if (count($branches) > 0) {
+                foreach ($branches as $branch) {
+                    $emp_branch = EmployeeBranches::where('employee_id', $request->get('employee_id'))
+                        ->where('branch_id', $branch)->first();
+                    if (!$emp_branch)
+                    $emp_branch = new EmployeeBranches();
+                    $emp_branch->employee_id = $request->get('employee_id');
+                    $emp_branch->branch_id = $branch;
+                    $emp_branch->save();
+                }
+            }
+        }
         $msg = __('msg.branch_add_success', [], $this->lang_code);
 
         return $this->successResponse($msg, 200);
@@ -865,4 +883,120 @@ class AdminstarionController extends Controller
         return $data;
     }
     ############################################################################
+    ######################## taxes ######################################
+    public function taxes(){
+        $taxes = Tax::where('vendor_id',$this->vendor_id)->orderBy('id','DESC')->get();
+        $msg = __('msg.tax_get_success', [], $this->lang_code);
+
+        return $this->dataResponse($msg,$taxes, 200);
+    }
+
+    public function addTax(Request $request){
+        $validator = Validator::make($request->all(), [
+            'name_ar' => 'required',
+            'price_include_tax' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $tax = new Tax();
+        $tax->vendor_id = $this->vendor_id;
+        $tax->name_ar = $request->name_ar;
+        $tax->name_en = $request->name_en;
+        $tax->price_include_tax = $request->price_include_tax;
+        $tax->percentage = $request->percentage;
+        $tax->save();
+
+        $msg = __('msg.tax_created_success', [], $this->lang_code);
+
+        return $this->dataResponse($msg,$tax, 200);
+    }
+    public function updateTax(Request $request){
+
+        $tax = Tax::where('vendor_id',$this->vendor_id)->where('id',$request->tax_id)->first();
+
+        if (!$tax)
+            return $this->errorResponse(__('msg.tax_not_found',[],$this->lang_code),400);
+        $validator = Validator::make($request->all(), [
+            'name_ar' => 'required',
+            'price_include_tax' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        if ($request->name_ar)
+        $tax->name_ar = $request->name_ar;
+        if ($request->name_en)
+        $tax->name_en = $request->name_en;
+        if ($request->price_include_tax)
+        $tax->price_include_tax = $request->price_include_tax;
+        if ($request->percentage)
+        $tax->percentage = $request->percentage;
+        $tax->save();
+
+        $msg = __('msg.tax_created_success', [], $this->lang_code);
+
+        return $this->dataResponse($msg,$tax, 200);
+    }
+
+    public function deleteTax(Request $request){
+        $tax = Tax::where('vendor_id',$this->vendor_id)->where('id',$request->tax_id)->first();
+
+        if (!$tax)
+            return $this->errorResponse(__('msg.tax_not_found',[],$this->lang_code),400);
+        $tax->delete();
+        $msg = __('msg.tax_delete_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function taxesGroup(){
+        $tax_groups = TaxGroup::where('vendor_id',$this->vendor_id)->with('taxes')->get();
+        $msg = __('msg.tax_groups_get_success', [], $this->lang_code);
+
+        return $this->dataResponse($msg,$tax_groups, 200);
+    }
+
+    public function addTaxGroup(Request $request){
+        $validator = Validator::make($request->all(), [
+            'name_ar' => 'required',
+            'tax_list' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $tax_group = new TaxGroup();
+        $tax_group->vendor_id = $this->vendor_id;
+        $tax_group->name_ar = $request->name_ar;
+        $tax_group->name_en = $request->name_en;
+        $tax_group->save();
+
+        $tax_list = json_decode($request->tax_list);
+        if (count($tax_list) > 0){
+            foreach ($tax_list as $item){
+                $tax_group_tax = new TaxGroupTaxes();
+                $tax_group_tax->group_id = $tax_group->id;
+                $tax_group_tax->tax_id = $item->tax_id;
+                $tax_group_tax->save();
+            }
+        }
+
+        $msg = __('msg.tax_groups_created_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function deleteTaxGroup(Request $request){
+        $tax_group = TaxGroup::where('vendor_id',$this->vendor_id)->where('id',$request->tax_group_id)->first();
+        if (!$tax_group)
+            return $this->errorResponse(__('msg.tax_group_not_found',[],$this->lang_code),400);
+
+        $tax_group->delete();
+        $msg = __('msg.tax_groups_deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
 }

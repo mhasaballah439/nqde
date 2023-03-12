@@ -20,17 +20,8 @@ class ModifyQuantitie extends Model
         return $this->belongsTo(Branch::class,'branch_id');
     }
 
-    public function getReasonNameAttribute(){
-        switch ($this->reason_type_id){
-            case 1:
-                return __('msg.cancel_return');
-            case 2:
-                return __('msg.modify_qty');
-            case 3:
-                return __('msg.fund_operations');
-            case 4:
-                return __('msg.expenses');
-        }
+    public function reason(){
+        return $this->belongsTo(VendorReason::class,'reason_id');
     }
 
     public function getStatusNameAttribute(){

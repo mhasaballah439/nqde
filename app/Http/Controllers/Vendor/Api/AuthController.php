@@ -158,6 +158,7 @@ class AuthController extends Controller
         $branch->code = 'B-' . str_pad(1, 2, "0", STR_PAD_LEFT);
         $branch->mobile = $vendor->mobile;
         $branch->status = 1;
+        $branch->is_free = 1;
         $branch->save();
 
         $store = new StoreHouse();

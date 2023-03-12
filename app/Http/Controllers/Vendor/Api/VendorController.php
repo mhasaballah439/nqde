@@ -20,9 +20,9 @@ class VendorController extends Controller
     {
         $this->lang_code = \request()->get('lang') ? \request()->get('lang') : get_default_languages();
          if (auth()->guard('vendor')->check())
-             $vendor_id = vendor()->id;
+             $this->vendor_id = vendor()->id;
         elseif (auth()->guard('vendor_employee')->check())
-            $vendor_id = vendor_employee()->vendor->id;
+            $this->vendor_id = vendor_employee()->vendor->id;
     }
 
     public function vendorData()

@@ -5,11 +5,10 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Tax extends Model
+class ProductCollectionTag extends Model
 {
     use HasFactory;
 
-    protected $table = 'taxes';
-
+    protected $table = 'product_collection_tags';
     protected $guarded = [];
 }
