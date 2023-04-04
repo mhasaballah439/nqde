@@ -20,6 +20,8 @@ use App\Models\ProductCollectionTag;
 use App\Models\ProductComponent;
 use App\Models\ProductTag;
 use App\Models\ProductTrait;
+use App\Models\TemporaryEventsCollection;
+use App\Models\TemporaryEventsProduct;
 use App\Models\VendorGiftCard;
 use App\Traits\ApiTrait;
 use Illuminate\Http\Request;
@@ -31,15 +33,22 @@ class ProductsController extends Controller
     use ApiTrait;
 
     var $lang_code;
+    var $vendor;
     var $vendor_id;
+    var $vendor_name;
 
     public function __construct()
     {
         $this->lang_code = \request()->get('lang') ? \request()->get('lang') : get_default_languages();
-        if (auth()->guard('vendor')->check())
+        if (auth()->guard('vendor')->check()) {
             $this->vendor_id = vendor()->id;
-        elseif (auth()->guard('vendor_employee')->check())
+            $this->vendor = vendor();
+            $this->vendor_name = vendor()->first_name . ' ' . vendor()->family_name;
+        } elseif (auth()->guard('vendor_employee')->check()) {
             $this->vendor_id = vendor_employee()->vendor->id;
+            $this->vendor = vendor_employee();
+            $this->vendor_name = vendor_employee()->name;
+        }
     }
 
     ################### categories area #####################
@@ -180,6 +189,113 @@ class ProductsController extends Controller
         return $this->successResponse(__('msg.cat_sorted_success', [], $this->lang_code));
 
     }
+
+    public function addCategoriesProducts(Request $request){
+        $validator = Validator::make($request->all(), [
+            'categories' => 'required',
+            'products' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $categories = $request->categories;
+        if (!is_array($categories))
+            $categories = json_decode($categories);
+
+        $products = $request->products;
+        if (!is_array($products))
+            $products = json_decode($products);
+
+        if (count($categories) > 0 && count($products) > 0) {
+            foreach ($categories as $category)
+                    Product::whereIn('id',$products)->update(['category_id' => $category]);
+        }
+
+        $msg = __('msg.cat_updated_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function addCategoriesGiftCard(Request $request){
+        $validator = Validator::make($request->all(), [
+            'categories' => 'required',
+            'gift_cards' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $categories = $request->categories;
+        if (!is_array($categories))
+            $categories = json_decode($categories);
+
+        $gift_cards = $request->gift_cards;
+        if (!is_array($gift_cards))
+            $gift_cards = json_decode($gift_cards);
+
+        if (count($categories) > 0 && count($gift_cards) > 0) {
+            foreach ($categories as $category)
+                    VendorGiftCard::whereIn('id',$gift_cards)->update(['category_id' => $category]);
+        }
+
+        $msg = __('msg.cat_updated_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function categoriesDeleteList(Request $request){
+        $validator = Validator::make($request->all(), [
+            'categories' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $categories = $request->categories;
+        if (!is_array($categories))
+            $categories = json_decode($categories);
+
+        ProductCategory::whereIn('id',$categories)->delete();
+
+
+        $msg = __('msg.deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function categoriesRestoreList(Request $request){
+        $validator = Validator::make($request->all(), [
+            'categories' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $categories = $request->categories;
+        if (!is_array($categories))
+            $categories = json_decode($categories);
+
+        ProductCategory::withTrashed()->whereIn('id',$categories)->restore();
+
+
+        $msg = __('msg.restore_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function categoryRestoreSingleItem(Request $request){
+        $validator = Validator::make($request->all(), [
+            'category_id' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        ProductCategory::withTrashed()->where('id',$request->category_id)->restore();
+
+
+        $msg = __('msg.restore_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
     ###########################################################
     #################### Products #############################
     public function products(Request $request)
@@ -291,7 +407,7 @@ class ProductsController extends Controller
         $product->active = 1;
         $product->save();
         if ($request->hasFile('image'))
-            upload_vendor_file($request->image, 'products', null, 'App\Models\Product', $this->vendor_id, $product->id);
+            upload_vendor_file($request->image, 'products', null, 'App\Models\Product', $this->vendor_id, $product->id,null);
 
         $msg = __('msg.product_created_success', [], $this->lang_code);
         return $this->successResponse($msg);
@@ -345,7 +461,7 @@ class ProductsController extends Controller
         $product->save();
         $image = isset($product->image) ? $product->image : null;
         if ($request->hasFile('image'))
-            upload_vendor_file($request->image, 'products', $image, 'App\Models\Product', $this->vendor_id, $product->id);
+            upload_vendor_file($request->image, 'products', $image, 'App\Models\Product', $this->vendor_id, $product->id,null);
 
         $msg = __('msg.product_updated_success', [], $this->lang_code);
         return $this->successResponse($msg);
@@ -398,6 +514,22 @@ class ProductsController extends Controller
                     'max_choice' => $addition->max_choice,
                     'min_choice' => $addition->min_choice,
                     'free_choice' => $addition->free_choice,
+                ];
+            }) : [],
+            'product_collections' => isset($product->product_collections) && count($product->product_collections) > 0 ? $product->product_collections->map(function ($item) {
+                return [
+                    'collection_id' => $item->product_collection_id,
+                    'collection_name' => $item->collection->name($this->lang_code) ?? '',
+                    'active' => $item->active,
+                ];
+            }) : [],
+            'temporary_events' => isset($product->temporary_events) && count($product->temporary_events) > 0 ? $product->temporary_events->map(function ($temp_event) {
+                return [
+                    'event_id' => $temp_event->event_id,
+                    'event_name' => $temp_event->item_event->name($this->lang_code) ?? '',
+                    'start_date' => isset($temp_event->item_event) ? date('d/m/Y',strtotime($temp_event->item_event->start_date)) : '',
+                    'end_date' => isset($temp_event->item_event) ? date('d/m/Y',strtotime($temp_event->item_event->end_date)) : '',
+                    'active' => $temp_event->item_event->active ?? 0,
                 ];
             }) : [],
             'traits' => isset($product->traits) && count($product->traits) > 0 ? $product->traits->map(function ($trait) {
@@ -559,6 +691,8 @@ class ProductsController extends Controller
 
         return $this->successResponse($msg, 200);
     }
+
+    ###################### stock component ###############
 
     public function addStockComponents(Request $request)
     {
@@ -771,6 +905,350 @@ class ProductsController extends Controller
         return $this->successResponse($msg, 200);
     }
 
+    public function addProductsCategory(Request $request){
+        $validator = Validator::make($request->all(), [
+            'products' => 'required',
+            'category_id' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $products = $request->products;
+        if (!is_array($products))
+            $products = json_decode($products);
+
+        if (count($products) > 0)
+                Product::whereIn('id',$products)->update(['category_id' => $request->category_id]);
+
+        $msg = __('msg.cat_updated_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function productsDeleteList(Request $request){
+        $validator = Validator::make($request->all(), [
+            'products' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $products = $request->products;
+        if (!is_array($products))
+            $products = json_decode($products);
+
+        Product::whereIn('id',$products)->delete();
+
+
+        $msg = __('msg.deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function productsRestoreList(Request $request){
+        $validator = Validator::make($request->all(), [
+            'products' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $products = $request->products;
+        if (!is_array($products))
+            $products = json_decode($products);
+
+        Product::withTrashed()->whereIn('id',$products)->restore();
+
+
+        $msg = __('msg.restore_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function productRestoreSingleItem(Request $request){
+        $validator = Validator::make($request->all(), [
+            'product_id' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        ProductCategory::withTrashed()->where('id',$request->product_id)->restore();
+
+
+        $msg = __('msg.restore_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function productsAddTags(Request $request){
+        $validator = Validator::make($request->all(), [
+            'products' => 'required',
+            'tags' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $products = $request->products;
+        if (!is_array($products))
+            $products = json_decode($products);
+
+        $tags = $request->tags;
+        if (!is_array($tags))
+            $tags = json_decode($tags);
+        if (count($products) > 0 && count($tags) > 0) {
+            foreach ($products as $product) {
+                foreach ($tags as $tag) {
+                    $product_tag = ProductTag::where('product_id', $product)->where('tag_id', $tag)->first();
+                    if (!$product_tag)
+                        $product_tag = new ProductTag();
+                    $product_tag->product_id = $product;
+                    $product_tag->tag_id = $tag;
+                    $product_tag->save();
+                }
+            }
+        }
+
+        $msg = __('msg.tag_add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function productsDeleteTags(Request $request){
+        $validator = Validator::make($request->all(), [
+            'products' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $products = $request->products;
+        if (!is_array($products))
+            $products = json_decode($products);
+
+
+        ProductTag::whereIn('product_id',$products)->delete();
+
+        $msg = __('msg.tag_deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function productsAddCollections(Request $request){
+        $validator = Validator::make($request->all(), [
+            'products' => 'required',
+            'collections' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $products = $request->products;
+        if (!is_array($products))
+            $products = json_decode($products);
+
+        $collections = $request->collections;
+        if (!is_array($collections))
+            $collections = json_decode($collections);
+        if (count($products) > 0 && count($collections) > 0) {
+            foreach ($products as $product) {
+                foreach ($collections as $collection) {
+                    $product_collection = ProductCollectionProducts::where('product_collection_id', $collection)
+                        ->where('product_id', $product)->first();
+                    if (!$product_collection)
+                        $product_collection = new ProductCollectionProducts();
+                    $product_collection->product_collection_id = $collection;
+                    $product_collection->product_id = $product;
+                    $product_collection->save();
+                }
+            }
+        }
+
+        $msg = __('msg.tag_add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function productsDeleteCollections(Request $request){
+        $validator = Validator::make($request->all(), [
+            'products' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $products = $request->products;
+        if (!is_array($products))
+            $products = json_decode($products);
+
+
+        ProductCollectionProducts::whereIn('product_id',$products)->delete();
+
+        $msg = __('msg.tag_deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function productsAddTaxGroup(Request $request){
+        $validator = Validator::make($request->all(), [
+            'products' => 'required',
+            'tax_group_id' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $products = $request->products;
+        if (!is_array($products))
+            $products = json_decode($products);
+
+        if (count($products) > 0)
+            Product::whereIn('id',$products)->update(['tax_group_id' => $request->tax_group_id]);
+
+        $msg = __('msg.add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function productsAddAdditioins(Request $request){
+        $validator = Validator::make($request->all(), [
+            'products' => 'required',
+            'additions' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $products = $request->products;
+        if (!is_array($products))
+            $products = json_decode($products);
+
+        $additions = $request->additions;
+        if (!is_array($additions))
+            $additions = json_decode($additions);
+        if (count($products) > 0 && count($additions) > 0) {
+            foreach ($products as $product) {
+                foreach ($additions as $addition) {
+                    $product_addition = ProductAddition::where('product_id', $product)
+                        ->where('addition_id', $addition)->first();
+                    if (!$product_addition)
+                        $product_addition = new ProductAddition();
+                    $product_addition->product_id = $product;
+                    $product_addition->addition_id = $addition;
+                    $product_addition->save();
+                }
+            }
+        }
+
+        $msg = __('msg.add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function productsDeleteAdditioins(Request $request){
+        $validator = Validator::make($request->all(), [
+            'products' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $products = $request->products;
+        if (!is_array($products))
+            $products = json_decode($products);
+
+        ProductAddition::where('product_id', $products)->delete();
+
+        $msg = __('msg.deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function productsAddTemporaryEvents(Request $request){
+        $validator = Validator::make($request->all(), [
+            'products' => 'required',
+            'temporary_events' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $products = $request->products;
+        if (!is_array($products))
+            $products = json_decode($products);
+
+        $temporary_events = $request->temporary_events;
+        if (!is_array($temporary_events))
+            $temporary_events = json_decode($temporary_events);
+        if (count($products) > 0 && count($temporary_events) > 0) {
+            foreach ($products as $product) {
+                foreach ($temporary_events as $temporary_event) {
+                    $product_temporary_event = TemporaryEventsProduct::where('product_id', $product)
+                        ->where('event_id', $temporary_event)->first();
+                    if (!$product_temporary_event)
+                        $product_temporary_event = new TemporaryEventsProduct();
+                    $product_temporary_event->product_id = $product;
+                    $product_temporary_event->event_id = $temporary_event;
+                    $product_temporary_event->save();
+                }
+            }
+        }
+
+        $msg = __('msg.add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function productsDeleteTemporaryEvents(Request $request){
+        $validator = Validator::make($request->all(), [
+            'products' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $products = $request->products;
+        if (!is_array($products))
+            $products = json_decode($products);
+
+        TemporaryEventsProduct::where('product_id', $products)->delete();
+
+        $msg = __('msg.deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function productsAddDeactiveBranches(Request $request){
+        $validator = Validator::make($request->all(), [
+            'products' => 'required',
+            'branches' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $products = $request->products;
+        if (!is_array($products))
+            $products = json_decode($products);
+
+        $branches = $request->branches;
+        if (!is_array($branches))
+            $branches = json_decode($branches);
+        if (count($products) > 0 && count($branches) > 0) {
+            foreach ($products as $product) {
+                foreach ($branches as $branch) {
+                    $product_bprice = ProductBranch::where('product_id', $product)
+                        ->where('branch_id', $branch)->first();
+                    if (!$product_bprice)
+                        $product_bprice = new ProductBranch();
+                    $product_bprice->product_id = $product;
+                    $product_bprice->branch_id = $branch;
+                    $product_bprice->active = 0;
+                    $product_bprice->save();
+                }
+            }
+        }
+
+        $msg = __('msg.add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
     #################### addtions #############################
     public function additions(Request $request)
     {
@@ -882,6 +1360,139 @@ class ProductsController extends Controller
         return $this->successResponse($msg);
     }
 
+    public function additionsAddProducts(Request $request){
+        $validator = Validator::make($request->all(), [
+            'additions' => 'required',
+            'products' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $additions = $request->additions;
+        if (!is_array($additions))
+            $additions = json_decode($additions);
+
+        $products = $request->products;
+        if (!is_array($products))
+            $products = json_decode($products);
+        if (count($additions) > 0 && count($products) > 0) {
+            foreach ($additions as $addition) {
+                foreach ($products as $product) {
+                    $product_addition = ProductAddition::where('product_id', $product)->where('addition_id', $addition)->first();
+                    if (!$product_addition)
+                        $product_addition = new ProductAddition();
+                    $product_addition->product_id = $product;
+                    $product_addition->addition_id = $addition;
+                    $product_addition->save();
+                }
+            }
+        }
+
+        $msg = __('msg.add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function additionsDeleteProducts(Request $request){
+        $validator = Validator::make($request->all(), [
+            'additions' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $additions = $request->additions;
+        if (!is_array($additions))
+            $additions = json_decode($additions);
+
+
+        ProductAddition::whereIn('addition_id',$additions)->delete();
+
+        $msg = __('msg.deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function additionsDeleteList(Request $request){
+        $validator = Validator::make($request->all(), [
+            'additions' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $additions = $request->additions;
+        if (!is_array($additions))
+            $additions = json_decode($additions);
+
+        Addition::whereIn('id',$additions)->delete();
+
+
+        $msg = __('msg.deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function additionsRestoreList(Request $request){
+        $validator = Validator::make($request->all(), [
+            'additions' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $additions = $request->additions;
+        if (!is_array($additions))
+            $additions = json_decode($additions);
+
+        Addition::withTrashed()->whereIn('id',$additions)->restore();
+
+
+        $msg = __('msg.restore_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function additionsRestoreSingleItem(Request $request){
+        $validator = Validator::make($request->all(), [
+            'addition_id' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        Addition::withTrashed()->where('id',$request->addition_id)->restore();
+
+
+        $msg = __('msg.restore_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function additionsAddAdditionOptions(Request $request){
+        $validator = Validator::make($request->all(), [
+            'additions' => 'required',
+            'addition_options' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $additions = $request->additions;
+        if (!is_array($additions))
+            $additions = json_decode($additions);
+
+        $addition_options = $request->addition_options;
+        if (!is_array($addition_options))
+            $addition_options = json_decode($addition_options);
+
+
+        if (count($additions) > 0 && count($addition_options) > 0)
+            foreach ($additions as $addition)
+                AdditionOption::whereIn('id',$addition_options)->update(['addition_id' => $addition]);
+
+        $msg = __('msg.add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
     ################################# addition options ##############
     public function additionOptions(Request $request)
     {
@@ -1192,6 +1803,219 @@ class ProductsController extends Controller
         return $this->successResponse($msg, 200);
     }
 
+    public function additionsOptionsAddAdditions(Request $request){
+        $validator = Validator::make($request->all(), [
+            'additions' => 'required',
+            'additions_options' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+        $additions_options = $request->additions_options;
+        if (!is_array($additions_options))
+            $additions_options = json_decode($additions_options);
+
+        $additions = $request->additions;
+        if (!is_array($additions))
+            $additions = json_decode($additions);
+
+
+        if (count($additions) > 0 && count($additions_options) > 0) {
+            foreach ($additions as $addition)
+                AdditionOption::whereIn('id',$additions_options)->update(['addition_id' => $addition]);
+        }
+
+        $msg = __('msg.add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function additionsOptionsAddTaxGroup(Request $request){
+        $validator = Validator::make($request->all(), [
+            'tax_group_id' => 'required',
+            'additions_options' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+        $additions_options = $request->additions_options;
+        if (!is_array($additions_options))
+            $additions_options = json_decode($additions_options);
+
+
+        if (count($additions_options) > 0)
+                AdditionOption::whereIn('id',$additions_options)->update(['tax_group_id' => $request->tax_group_id]);
+
+        $msg = __('msg.add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function additionsOptionsDeactiveBranches(Request $request){
+        $validator = Validator::make($request->all(), [
+            'branches' => 'required',
+            'additions_options' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+        $additions_options = $request->additions_options;
+        if (!is_array($additions_options))
+            $additions_options = json_decode($additions_options);
+
+        $branches = $request->branches;
+        if (!is_array($branches))
+            $branches = json_decode($branches);
+
+        if (count($additions_options) > 0 && count($branches))
+        {
+            foreach ($additions_options as $option){
+                foreach ($branches as $branch){
+                    $additional_option_bprice = AdditionOptionsSpecialBranchPrice::where('additional_option_id', $option)
+                        ->where('branch_id', $branch)->first();
+                    if (!$additional_option_bprice)
+                        $additional_option_bprice = new AdditionOptionsSpecialBranchPrice();
+                    $additional_option_bprice->additional_option_id = $option;
+                    $additional_option_bprice->branch_id = $branch;
+                    $additional_option_bprice->price = 0;
+                    $additional_option_bprice->active = 0;
+                    $additional_option_bprice->save();
+                }
+            }
+        }
+        $msg = __('msg.add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function additionsOptionsAddStocks(Request $request){
+        $validator = Validator::make($request->all(), [
+            'stocks' => 'required',
+            'additions_options' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+        $additions_options = $request->additions_options;
+        if (!is_array($additions_options))
+            $additions_options = json_decode($additions_options);
+
+        $stocks = $request->stocks;
+        if (!is_array($stocks))
+            $stocks = json_decode($stocks);
+
+        if (count($additions_options) > 0 && count($stocks))
+        {
+            foreach ($additions_options as $option){
+                foreach ($stocks as $stock){
+                    $stock_op = AdditionOptionsStocks::where('stock_id', $stock)
+                        ->where('additional_option_id', $option)->first();
+                    if (!$stock_op)
+                        $stock_op = new AdditionOptionsStocks();
+                    $stock_op->stock_id = $stock;
+                    $stock_op->additional_option_id = $option;
+                    $stock_op->save();
+                }
+            }
+        }
+        $msg = __('msg.add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function additionsOptionsDeleteStocks(Request $request){
+        $validator = Validator::make($request->all(), [
+            'stocks' => 'required',
+            'additions_options' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+        $additions_options = $request->additions_options;
+        if (!is_array($additions_options))
+            $additions_options = json_decode($additions_options);
+
+        $stocks = $request->stocks;
+        if (!is_array($stocks))
+            $stocks = json_decode($stocks);
+
+        if (count($additions_options) > 0 && count($stocks))
+            AdditionOptionsStocks::whereIn('additional_option_id', $additions_options)->delete();
+
+        $msg = __('msg.delete_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function additionsOptionsDeleteList(Request $request){
+        $validator = Validator::make($request->all(), [
+            'additions_options' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $additions_options = $request->additions_options;
+        if (!is_array($additions_options))
+            $additions_options = json_decode($additions_options);
+
+        AdditionOption::whereIn('id',$additions_options)->delete();
+
+
+        $msg = __('msg.deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function additionsOptionsActive(Request $request){
+        $validator = Validator::make($request->all(), [
+            'additions_options' => 'required',
+            'active' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $additions_options = $request->additions_options;
+        if (!is_array($additions_options))
+            $additions_options = json_decode($additions_options);
+
+        AdditionOption::whereIn('id',$additions_options)->update(['active' => $request->active]);
+
+
+        $msg = __('msg.add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function additionsOptionsRestoreList(Request $request){
+        $validator = Validator::make($request->all(), [
+            'additions_options' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $additions_options = $request->additions_options;
+        if (!is_array($additions_options))
+            $additions_options = json_decode($additions_options);
+
+        AdditionOption::withTrashed()->whereIn('id',$additions_options)->restore();
+
+
+        $msg = __('msg.restore_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function additionsOptionsRestoreSingleItem(Request $request){
+        $validator = Validator::make($request->all(), [
+            'additions_option_id' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        AdditionOption::withTrashed()->where('id',$request->additions_option_id)->restore();
+
+
+        $msg = __('msg.restore_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
     ################# gif cards ########################3
     public function getGiftCards(Request $request)
     {
@@ -1298,7 +2122,7 @@ class ProductsController extends Controller
         $gift_card->code = 'GIC-' . str_pad($last_item_id + 1, 5, "0", STR_PAD_LEFT);
         $gift_card->save();
         if ($request->image)
-            upload_vendor_file($request->image, 'gift_cards', null, 'App\Models\VendorGiftCard', $this->vendor_id, $gift_card->id);
+            upload_vendor_file($request->image, 'gift_cards', null, 'App\Models\VendorGiftCard', $this->vendor_id, $gift_card->id,null);
 
         $msg = __('msg.gift_card_created_success', [], $this->lang_code);
 
@@ -1337,7 +2161,7 @@ class ProductsController extends Controller
             $gift_card->active = $request->active;
         $gift_card->save();
         if ($request->image)
-            upload_vendor_file($request->image, 'gift_cards', $gift_card->municipal_file, 'App\Models\VendorGiftCard', $this->vendor_id, $gift_card->id);
+            upload_vendor_file($request->image, 'gift_cards', $gift_card->municipal_file, 'App\Models\VendorGiftCard', $this->vendor_id, $gift_card->id,null);
 
         $msg = __('msg.gift_card_update_success', [], $this->lang_code);
 
@@ -1461,6 +2285,167 @@ class ProductsController extends Controller
         } while (true);
     }
 
+    public function giftCardDeleteList(Request $request){
+        $validator = Validator::make($request->all(), [
+            'gift_cards' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $gift_cards = $request->gift_cards;
+        if (!is_array($gift_cards))
+            $gift_cards = json_decode($gift_cards);
+
+        VendorGiftCard::whereIn('id',$gift_cards)->delete();
+
+
+        $msg = __('msg.deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function giftCardRestoreList(Request $request){
+        $validator = Validator::make($request->all(), [
+            'gift_cards' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $gift_cards = $request->gift_cards;
+        if (!is_array($gift_cards))
+            $gift_cards = json_decode($gift_cards);
+
+        VendorGiftCard::withTrashed()->whereIn('id',$gift_cards)->restore();
+
+
+        $msg = __('msg.restore_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function giftCardRestoreSingleItem(Request $request){
+        $validator = Validator::make($request->all(), [
+            'gift_card_id' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        VendorGiftCard::withTrashed()->where('id',$request->gift_card_id)->restore();
+
+
+        $msg = __('msg.restore_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function giftCardAddTags(Request $request){
+        $validator = Validator::make($request->all(), [
+            'gift_cards' => 'required',
+            'tags' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $gift_cards = $request->gift_cards;
+        if (!is_array($gift_cards))
+            $gift_cards = json_decode($gift_cards);
+
+        $tags = $request->tags;
+        if (!is_array($tags))
+            $tags = json_decode($tags);
+        if (count($gift_cards) > 0 && count($tags) > 0) {
+            foreach ($gift_cards as $card) {
+                foreach ($tags as $tag) {
+                    $gift_card_tag = GiftCardTags::where('gift_card_id', $card)->where('tag_id', $tag)->first();
+                    if (!$gift_card_tag)
+                        $gift_card_tag = new GiftCardTags();
+                    $gift_card_tag->gift_card_id = $card;
+                    $gift_card_tag->tag_id = $tag;
+                    $gift_card_tag->save();
+                }
+            }
+        }
+
+        $msg = __('msg.tag_add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function giftCardDeleteTags(Request $request){
+        $validator = Validator::make($request->all(), [
+            'gift_cards' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $gift_cards = $request->gift_cards;
+        if (!is_array($gift_cards))
+            $gift_cards = json_decode($gift_cards);
+
+
+        GiftCardTags::whereIn('gift_card_id',$gift_cards)->delete();
+
+        $msg = __('msg.tag_deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function giftCardActiveList(Request $request){
+        $validator = Validator::make($request->all(), [
+            'gift_cards' => 'required',
+            'active' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $gift_cards = $request->gift_cards;
+        if (!is_array($gift_cards))
+            $gift_cards = json_decode($gift_cards);
+
+
+        VendorGiftCard::whereIn('id',$gift_cards)->update(['active' => $request->active]);
+
+        $msg = __('msg.add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function giftCardDeactiveBranches(Request $request){
+        $validator = Validator::make($request->all(), [
+            'gift_cards' => 'required',
+            'branches' => 'required',
+            'active' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $gift_cards = $request->gift_cards;
+        if (!is_array($gift_cards))
+            $gift_cards = json_decode($gift_cards);
+
+        $branches = $request->branches;
+        if (!is_array($branches))
+            $branches = json_decode($branches);
+        if (count($gift_cards) > 0 && count($branches) > 0) {
+            foreach ($gift_cards as $card) {
+                foreach ($branches as $branch) {
+                    $gift_card_branch = GiftCardBranches::where('gift_card_id', $card)->where('branch_id', $branch)->first();
+                    if (!$gift_card_branch)
+                        $gift_card_branch = new GiftCardTags();
+                    $gift_card_branch->gift_card_id = $card;
+                    $gift_card_branch->branch_id = $branch;
+                    $gift_card_branch->active = $request->active;
+                    $gift_card_branch->save();
+                }
+            }
+        }
+
+        $msg = __('msg.add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
     ###################### product collections #############
 
     public function productCollections(Request $request)
@@ -1553,10 +2538,10 @@ class ProductsController extends Controller
         $collection->price = $request->price;
         $collection->type_sell = $request->type_sell;
         $collection->cost_calculation_method = $request->cost_calculation_method;
-        $collection->created_by = vendor()->name;
+        $collection->created_by = $this->vendor_name;
         $collection->save();
         if ($request->hasFile('image'))
-            upload_vendor_file($request->image, 'product_collection', null, 'App\Models\ProductCollection', $this->vendor_id, $collection->id);
+            upload_vendor_file($request->image, 'product_collection', null, 'App\Models\ProductCollection', $this->vendor_id, $collection->id,null);
 
         $msg = __('msg.product_collection_created_success', [], $this->lang_code);
         return $this->successResponse($msg);
@@ -1605,7 +2590,7 @@ class ProductsController extends Controller
         $collection->save();
         $image = isset($product->image) ? $product->image : null;
         if ($request->hasFile('image'))
-            upload_vendor_file($request->image, 'product_collection', $image, 'App\Models\ProductCollection', $this->vendor_id, $collection->id);
+            upload_vendor_file($request->image, 'product_collection', $image, 'App\Models\ProductCollection', $this->vendor_id, $collection->id,null);
 
         $msg = __('msg.product_collection_updated_success', [], $this->lang_code);
         return $this->successResponse($msg);
@@ -1641,6 +2626,15 @@ class ProductsController extends Controller
                   'product_category_name' => $item->product->category->name($this->lang_code) ?? '',
               ];
           }) : [],
+            'temporary_events' => isset($collection->temporary_events) && count($collection->temporary_events) > 0 ? $collection->temporary_events->map(function ($temp_event) {
+                return [
+                    'event_id' => $temp_event->event_id,
+                    'event_name' => $temp_event->item_event->name($this->lang_code) ?? '',
+                    'start_date' => isset($temp_event->item_event) ? date('d/m/Y',strtotime($temp_event->item_event->start_date)) : '',
+                    'end_date' => isset($temp_event->item_event) ? date('d/m/Y',strtotime($temp_event->item_event->end_date)) : '',
+                    'active' => $temp_event->item_event->active ?? 0,
+                ];
+            }) : [],
           'active_branches' => isset($collection->branches) && count($collection->branches) > 0 ? $collection->branches->where('active',1)->map(function ($item){
               return [
                   'branch_id' => $item->branch_id,
@@ -1860,6 +2854,266 @@ class ProductsController extends Controller
         $product_col_product->delete();
 
         $msg = __('msg.product_deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function productCollectionAddProducts(Request $request){
+        $validator = Validator::make($request->all(), [
+            'products' => 'required',
+            'collections' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $collections = $request->collections;
+        if (!is_array($collections))
+            $collections = json_decode($collections);
+
+        $products = $request->products;
+        if (!is_array($products))
+            $products = json_decode($products);
+
+        if (count($products) > 0 && count($collections) > 0) {
+            foreach ($collections as $collection) {
+                foreach ($products as $product) {
+                    $product_col_product = ProductCollectionProducts::where('product_collection_id', $collection)
+                        ->where('product_id', $product)->first();
+                    if (!$product_col_product)
+                        $product_col_product = new ProductCollectionProducts();
+                    $product_col_product->product_collection_id = $collection;
+                    $product_col_product->product_id = $product;
+                    $product_col_product->active = 1;
+                    $product_col_product->save();
+                }
+            }
+        }
+
+        $msg = __('msg.add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function productCollectionDeleteProducts(Request $request){
+        $validator = Validator::make($request->all(), [
+            'products' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $products = $request->products;
+        if (!is_array($products))
+            $products = json_decode($products);
+
+        ProductCollectionProducts::where('product_id', $products)->delete();
+
+        $msg = __('msg.deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function productCollectionDeleteList(Request $request){
+        $validator = Validator::make($request->all(), [
+            'collections' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $collections = $request->collections;
+        if (!is_array($collections))
+            $collections = json_decode($collections);
+
+        ProductCollection::whereIn('id',$collections)->delete();
+
+
+        $msg = __('msg.deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function productCollectionRestoreList(Request $request){
+        $validator = Validator::make($request->all(), [
+            'collections' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $collections = $request->collections;
+        if (!is_array($collections))
+            $collections = json_decode($collections);
+
+        ProductCollection::withTrashed()->whereIn('id',$collections)->restore();
+
+
+        $msg = __('msg.restore_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function productCollectionRestoreSingleItem(Request $request){
+        $validator = Validator::make($request->all(), [
+            'collection_id' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        ProductCollection::withTrashed()->where('id',$request->collection_id)->restore();
+
+
+        $msg = __('msg.restore_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function productCollectionAddTags(Request $request){
+        $validator = Validator::make($request->all(), [
+            'collections' => 'required',
+            'tags' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $collections = $request->collections;
+        if (!is_array($collections))
+            $collections = json_decode($collections);
+
+        $tags = $request->tags;
+        if (!is_array($tags))
+            $tags = json_decode($tags);
+        if (count($collections) > 0 && count($tags) > 0) {
+            foreach ($collections as $collection) {
+                foreach ($tags as $tag) {
+                    $product_col_tag = ProductCollectionTag::where('product_collection_id', $collection)
+                        ->where('tag_id', $tag)->first();
+                    if (!$product_col_tag)
+                        $product_col_tag = new ProductCollectionTag();
+                    $product_col_tag->product_collection_id = $collection;
+                    $product_col_tag->tag_id = $tag;
+                    $product_col_tag->save();
+                }
+            }
+        }
+
+        $msg = __('msg.tag_add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function productCollectionDeleteTags(Request $request){
+        $validator = Validator::make($request->all(), [
+            'collections' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $collections = $request->collections;
+        if (!is_array($collections))
+            $collections = json_decode($collections);
+
+
+        ProductCollectionTag::whereIn('product_collection_id',$collections)->delete();
+
+        $msg = __('msg.tag_deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function productCollectionTaxGroup(Request $request){
+        $validator = Validator::make($request->all(), [
+            'collections' => 'required',
+            'tax_group_id' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $collections = $request->collections;
+        if (!is_array($collections))
+            $collections = json_decode($collections);
+
+
+        ProductCollection::whereIn('id',$collections)->update(['tax_group_id' => $request->tax_group_id]);
+
+        $msg = __('msg.updated_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function productCollectionAddTemporaryEvents(Request $request){
+        $validator = Validator::make($request->all(), [
+            'collections' => 'required',
+            'temporary_events' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $collections = $request->collections;
+        if (!is_array($collections))
+            $collections = json_decode($collections);
+
+        $temporary_events = $request->temporary_events;
+        if (!is_array($temporary_events))
+            $temporary_events = json_decode($temporary_events);
+        if (count($collections) > 0 && count($temporary_events) > 0) {
+            foreach ($collections as $collection) {
+                foreach ($temporary_events as $temporary_event) {
+                    $product_temporary_event = TemporaryEventsCollection::where('collection_id', $collection)
+                        ->where('event_id', $temporary_event)->first();
+                    if (!$product_temporary_event)
+                        $product_temporary_event = new TemporaryEventsCollection();
+                    $product_temporary_event->collection_id = $collection;
+                    $product_temporary_event->event_id = $temporary_event;
+                    $product_temporary_event->save();
+                }
+            }
+        }
+
+        $msg = __('msg.add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function productCollectionDeleteTemporaryEvents(Request $request){
+        $validator = Validator::make($request->all(), [
+            'collections' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $collections = $request->collections;
+        if (!is_array($collections))
+            $collections = json_decode($collections);
+
+        TemporaryEventsCollection::where('collection_id', $collections)->delete();
+
+        $msg = __('msg.deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function productCollectionActive(Request $request){
+        $validator = Validator::make($request->all(), [
+            'collections' => 'required',
+            'active' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $collections = $request->collections;
+        if (!is_array($collections))
+            $collections = json_decode($collections);
+
+
+        if (count($collections) > 0)
+            ProductCollection::whereIn('id',$collections)->update(['active' => $request->active]);
+
+        $msg = __('msg.add_success', [], $this->lang_code);
 
         return $this->successResponse($msg, 200);
     }

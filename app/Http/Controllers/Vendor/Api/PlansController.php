@@ -177,7 +177,8 @@ class PlansController extends Controller
 
                 return $this->dataResponse(__('msg.subscribed_successfully', [], $this->lang_code), vendor_data());
             }else{
-                return $directData;
+                $msg = isset($directData->ErrorMessage) && $directData->ErrorMessage ? $directData->ErrorMessage : 'Payment failed';
+                return $this->errorResponse($msg, 400);
             }
         }
 

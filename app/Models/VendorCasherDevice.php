@@ -8,4 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 class VendorCasherDevice extends Model
 {
     use HasFactory;
+    protected $table = 'vendor_casher_devices';
+
+    protected $guarded = [];
 }

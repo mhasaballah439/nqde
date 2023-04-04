@@ -35,4 +35,11 @@ class Tag extends Model
                 return __('msg.storehouses');
         }
     }
+
+    public function name($lang){
+        if ($lang == 'ar')
+            return $this->name_ar;
+        else
+            return $this->name_en;
+    }
 }

@@ -13,4 +13,8 @@ class ProductCollectionProducts extends Model
     public function product(){
         return $this->belongsTo(Product::class,'product_id');
     }
+
+    public function collection(){
+        return $this->belongsTo(ProductCollection::class,'product_collection_id');
+    }
 }

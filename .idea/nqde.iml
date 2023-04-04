@@ -80,7 +80,6 @@
       <excludeFolder url="file://$MODULE_DIR$/vendor/symfony/event-dispatcher" />
       <excludeFolder url="file://$MODULE_DIR$/vendor/symfony/var-dumper" />
       <excludeFolder url="file://$MODULE_DIR$/vendor/symfony/http-foundation" />
-      <excludeFolder url="file://$MODULE_DIR$/vendor/symfony/polyfill-php81" />
       <excludeFolder url="file://$MODULE_DIR$/vendor/brick/math" />
       <excludeFolder url="file://$MODULE_DIR$/vendor/symfony/http-kernel" />
       <excludeFolder url="file://$MODULE_DIR$/vendor/symfony/translation-contracts" />
@@ -124,6 +123,8 @@
       <excludeFolder url="file://$MODULE_DIR$/vendor/namshi/jose" />
       <excludeFolder url="file://$MODULE_DIR$/vendor/spatie/simple-excel" />
       <excludeFolder url="file://$MODULE_DIR$/vendor/openspout/openspout" />
+      <excludeFolder url="file://$MODULE_DIR$/vendor/milon/barcode" />
+      <excludeFolder url="file://$MODULE_DIR$/vendor/symfony/yaml" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

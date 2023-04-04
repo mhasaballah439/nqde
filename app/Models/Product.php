@@ -50,6 +50,13 @@ class Product extends Model
         return $this->hasMany(ProductBranch::class,'product_id')->where('active',1);
     }
 
+    public function product_collections(){
+        return $this->hasMany(ProductCollectionProducts::class,'product_id');
+    }
+
+    public function temporary_events(){
+        return $this->hasMany(TemporaryEventsProduct::class,'product_id');
+    }
     public function name($lang){
         if ($lang == 'ar')
             return $this->name_ar;

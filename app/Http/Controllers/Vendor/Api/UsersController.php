@@ -316,4 +316,179 @@ class UsersController extends Controller
         $msg = __('msg.email_send_success', [], $this->lang_code);
         return $this->successResponse($msg, 200);
     }
+
+    public function usersAddTags(Request $request){
+        $validator = Validator::make($request->all(), [
+            'users' => 'required',
+            'tags' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $users = $request->users;
+        if (!is_array($users))
+            $users = json_decode($users);
+
+        $tags = $request->tags;
+        if (!is_array($tags))
+            $tags = json_decode($tags);
+        if (count($users) > 0 && count($tags) > 0) {
+            foreach ($users as $user) {
+                foreach ($tags as $tag) {
+                    $user_tag = UserTags::where('user_id', $user)->where('tag_id', $tag)->first();
+                    if (!$user_tag)
+                        $user_tag = new UserTags();
+                    $user_tag->user_id = $user;
+                    $user_tag->tag_id = $tag;
+                    $user_tag->save();
+                }
+            }
+        }
+
+        $msg = __('msg.tag_add_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function usersDeleteTags(Request $request){
+        $validator = Validator::make($request->all(), [
+            'users' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $users = $request->users;
+        if (!is_array($users))
+            $users = json_decode($users);
+
+            UserTags::whereIn('user_id', $users)->delete();
+
+
+        $msg = __('msg.tag_deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function usersDeleteAccounts(Request $request){
+        $validator = Validator::make($request->all(), [
+            'users' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $users = $request->users;
+        if (!is_array($users))
+            $users = json_decode($users);
+
+             User::whereIn('id',$users)->delete();
+
+
+        $msg = __('msg.user_deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function usersRestoreAccounts(Request $request){
+        $validator = Validator::make($request->all(), [
+            'users' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $users = $request->users;
+        if (!is_array($users))
+            $users = json_decode($users);
+
+             User::withTrashed()->whereIn('id',$users)->restore();
+
+
+        $msg = __('msg.user_restore_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function usersRestoreSingleAccounts(Request $request){
+        $validator = Validator::make($request->all(), [
+            'user_id' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+             User::withTrashed()->where('id',$request->user_id)->restore();
+
+
+        $msg = __('msg.user_restore_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+
+    public function usersActiveAccounts(Request $request){
+        $validator = Validator::make($request->all(), [
+            'users' => 'required',
+            'active' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $users = $request->users;
+        if (!is_array($users))
+            $users = json_decode($users);
+
+             User::whereIn('id',$users)->update([
+                 'active' => $request->active
+             ]);
+
+
+        $msg = __('msg.updated_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function usersBlackListAccounts(Request $request){
+        $validator = Validator::make($request->all(), [
+            'users' => 'required',
+            'is_black_list' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $users = $request->users;
+        if (!is_array($users))
+            $users = json_decode($users);
+
+             User::whereIn('id',$users)->update([
+                 'is_black_list' => $request->is_black_list
+             ]);
+
+
+        $msg = __('msg.updated_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function usersDeferredAccounts(Request $request){
+        $validator = Validator::make($request->all(), [
+            'users' => 'required',
+            'active_deferred' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $users = $request->users;
+        if (!is_array($users))
+            $users = json_decode($users);
+
+             User::whereIn('id',$users)->update([
+                 'active_deferred' => $request->active_deferred
+             ]);
+
+
+        $msg = __('msg.updated_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
 }

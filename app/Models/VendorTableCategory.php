@@ -8,4 +8,6 @@ use Illuminate\Database\Eloquent\Model;
 class VendorTableCategory extends Model
 {
     use HasFactory;
+    protected $table = 'vendor_table_categories';
+    protected $guarded = [];
 }

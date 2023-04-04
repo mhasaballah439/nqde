@@ -14,7 +14,7 @@ class Stock extends Model
     protected $guarded = [];
 
     public function store_house(){
-        return $this->belongsTo(StoreHouse::class,'stocks');
+        return $this->belongsTo(StoreHouse::class,'store_house_id');
     }
 
     public function category(){

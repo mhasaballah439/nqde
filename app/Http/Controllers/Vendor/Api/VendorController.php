@@ -124,10 +124,12 @@ class VendorController extends Controller
 
         $delivery = new DeliveryArea();
         $delivery->vendor_id = $this->vendor_id;
-        $delivery->name_ar = $request->get('name_ar');
-        $delivery->name_en = $request->get('name_en');
+        $delivery->name_ar = $request->name_ar;
+        $delivery->name_en = $request->name_en;
         $delivery->number = 'DA-'.($last_item_id + 1);
-        $delivery->source = $request->get('source');
+        $delivery->source = $request->source;
+        $delivery->lat = $request->lat;
+        $delivery->lng = $request->lng;
         $delivery->save();
 
         $msg = __('msg.delivery_areas_created_success', [], $this->lang_code);
@@ -141,14 +143,18 @@ class VendorController extends Controller
         if (!$delivery)
             return $this->errorResponse(__('msg.delivery_areas_not_found', [], $this->lang_code), 400);
 
-        if ($request->get('name_ar'))
-            $delivery->name_ar = $request->get('name_ar');
-        if ($request->get('name_en'))
-            $delivery->name_en = $request->get('name_en');
-        if ($request->get('number'))
-            $delivery->number = $request->get('number');
-        if ($request->get('source'))
-            $delivery->source = $request->get('source');
+        if ($request->name_ar)
+            $delivery->name_ar = $request->name_ar;
+        if ($request->name_en)
+            $delivery->name_en = $request->name_en;
+        if ($request->number)
+            $delivery->number = $request->number;
+        if ($request->source)
+            $delivery->source = $request->source;
+        if ($request->lat)
+            $delivery->lat = $request->lat;
+        if ($request->lng)
+            $delivery->lng = $request->lng;
         $delivery->save();
 
         $msg = __('msg.delivery_areas_updated_success', [], $this->lang_code);
@@ -164,5 +170,59 @@ class VendorController extends Controller
 
         $msg = __('msg.delivery_areas_deleted_success', [], $this->lang_code);
         return $this->successResponse($msg);
+    }
+
+    public function deliveryAreasDeleteList(Request $request){
+        $validator = Validator::make($request->all(), [
+            'delivery_areas' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $delivery_areas = $request->delivery_areas;
+        if (!is_array($delivery_areas))
+            $delivery_areas = json_decode($delivery_areas);
+
+        DeliveryArea::whereIn('id',$delivery_areas)->delete();
+
+
+        $msg = __('msg.deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function deliveryAreasRestoreList(Request $request){
+        $validator = Validator::make($request->all(), [
+            'delivery_areas' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        $delivery_areas = $request->delivery_areas;
+        if (!is_array($delivery_areas))
+            $delivery_areas = json_decode($delivery_areas);
+
+        DeliveryArea::withTrashed()->whereIn('id',$delivery_areas)->restore();
+
+
+        $msg = __('msg.restore_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function deliveryAreasRestoreSingleItem(Request $request){
+        $validator = Validator::make($request->all(), [
+            'delivery_area_id' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        DeliveryArea::withTrashed()->where('id',$request->delivery_area_id)->restore();
+
+
+        $msg = __('msg.restore_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
     }
 }

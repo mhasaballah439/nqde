@@ -15,6 +15,10 @@ class ProductCollection extends Model
     public function branches(){
         return $this->hasMany(ProductCollectionBranch::class,'product_collection_id');
     }
+
+    public function temporary_events(){
+        return $this->hasMany(TemporaryEventsCollection::class,'collection_id');
+    }
     public function tags(){
         return $this->belongsToMany(Tag::class,'product_collection_tags','product_collection_id','tag_id');
     }
