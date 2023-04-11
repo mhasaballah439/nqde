@@ -35,4 +35,7 @@ class VendorGiftCard extends Model
         else
             return $this->name_en;
     }
+//cost_calculation_method
+//1 -ثابت
+//2 - مفتوح
 }

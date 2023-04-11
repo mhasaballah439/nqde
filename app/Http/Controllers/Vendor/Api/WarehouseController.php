@@ -466,6 +466,8 @@ class WarehouseController extends Controller
             $store->status = $request->get('status');
             $store->save();
         } else {
+            if (!vendor()->active_plan)
+                return $this->errorResponse('You dont have plane',400);
             $directData = $this->myfatorah_payment($request, (float)vendor()->active_plan->warehouse_price);
 
             if (isset($directData->Status) && $directData->Status == 'SUCCESS') {
@@ -1097,6 +1099,21 @@ class WarehouseController extends Controller
 
         return $this->successResponse($msg, 200);
     }
+
+    public function stocksForceDeleted(Request $request){
+        $validator = Validator::make($request->all(), [
+            'stock_id' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        Stock::withTrashed()->where('id',$request->stock_id)->forceDelete();
+
+        $msg = __('msg.stocks_deleted_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
     public function stocksAddSuppliers(Request $request){
         $validator = Validator::make($request->all(), [
             'suppliers' => 'required',
@@ -1506,11 +1523,22 @@ class WarehouseController extends Controller
         if ($validator->fails())
             return $this->errorResponse($validator->errors()->first(), 400);
 
-        $suppliers = $request->suppliers;
-        if (!is_array($suppliers))
-            $suppliers = json_decode($suppliers);
 
         Supplier::where('id',$request->supplier_id)->restore();
+
+        $msg = __('msg.supplier_restore_success', [], $this->lang_code);
+
+        return $this->successResponse($msg, 200);
+    }
+    public function supplierForceDelete(Request $request){
+        $validator = Validator::make($request->all(), [
+            'supplier_id' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
+        Supplier::where('id',$request->supplier_id)->forceDelete();
 
         $msg = __('msg.supplier_restore_success', [], $this->lang_code);
 
@@ -1697,6 +1725,8 @@ class WarehouseController extends Controller
 
         if ($code)
             $purchase_orders = $purchase_orders->where('code', 'LIKE', '%' . $code . '%');
+        if ($request->type_id)
+            $purchase_orders = $purchase_orders->where('type_id', $request->type_id);
         if ($created_by_name)
             $purchase_orders = $purchase_orders->where('created_by_name', 'LIKE', '%' . $created_by_name . '%');
         if ($work_date)
@@ -1715,7 +1745,7 @@ class WarehouseController extends Controller
                     $tag->whereIn('id',$branch_tag);
                 });
             });
-        $purchase_orders = $purchase_orders->where('type_id', 0)->orderBy('id', 'DESC')->paginate(10);
+        $purchase_orders = $purchase_orders->orderBy('id', 'DESC')->paginate(10);
 
         $data = [
             'count' => $purchase_orders->count(),
@@ -1738,79 +1768,8 @@ class WarehouseController extends Controller
                     'code' => $purchase->code,
                     'status_name' => $purchase->status_name($this->lang_code),
                     'status_id' => $purchase->status_id,
-                    'work_date' => $purchase->work_date ? date('d/m/Y H:i', strtotime($purchase->work_date)) : '',
-                ];
-            })
-        ];
-        $msg = __('msg.stock_purchase_orders_get_success', [], $this->lang_code);
-        return $this->dataResponse($msg, $data);
-    }
-
-    public function stockPurchaseWarehouseOrders(Request $request)
-    {
-        $code = $request->get('code');
-        $work_date = $request->get('work_date');
-        $status_id = $request->get('status_id');
-        $supplier_id = $request->get('supplier_id');
-        $branch_tag = $request->get('branch_tag');
-        $created_by_name = $request->get('created_by_name');
-        $created_at = $request->get('created_at');
-        $delivery_date = $request->get('delivery_date');
-        if ($request->get('type') == 0) // all status
-            $purchase_orders = StockPurchaseOrders::where('vendor_id', $this->vendor_id);
-        elseif ($request->get('type') == 1) //draft
-            $purchase_orders = StockPurchaseOrders::where('vendor_id', $this->vendor_id)->where('status_id', 0);
-        elseif ($request->get('type') == 2) // sent
-            $purchase_orders = StockPurchaseOrders::where('vendor_id', $this->vendor_id)->where('status_id', 1);
-        elseif ($request->get('type') == 3) // canceled
-            $purchase_orders = StockPurchaseOrders::where('vendor_id', $this->vendor_id)->where('status_id', 3);
-        else
-            $purchase_orders = StockPurchaseOrders::where('vendor_id', $this->vendor_id);
-
-        if ($code)
-            $purchase_orders = $purchase_orders->where('code', 'LIKE', '%' . $code . '%');
-        if ($created_by_name)
-            $purchase_orders = $purchase_orders->where('created_by_name', 'LIKE', '%' . $created_by_name . '%');
-        if ($work_date)
-            $purchase_orders = $purchase_orders->whereDate('work_date', $work_date);
-        if ($created_at)
-            $purchase_orders = $purchase_orders->whereDate('created_at', $created_at);
-        if ($delivery_date)
-            $purchase_orders = $purchase_orders->whereDate('delivery_date', $delivery_date);
-        if ($status_id)
-            $purchase_orders = $purchase_orders->whereDate('status_id', $status_id);
-        if ($supplier_id)
-            $purchase_orders = $purchase_orders->whereDate('supplier_id', $supplier_id);
-        if ($branch_tag)
-            $purchase_orders = $purchase_orders->whereHas('branch', function ($q) use ($branch_tag) {
-                $q->whereHas('tags', function ($tag) use ($branch_tag) {
-                    $tag->where('name', 'LIKE', '%' . $branch_tag . '%');
-                });
-            });
-        $purchase_orders = $purchase_orders->where('type_id', 1)->orderBy('id', 'DESC')->paginate(10);
-
-        $data = [
-            'count' => $purchase_orders->count(),
-            'currentPage' => $purchase_orders->currentPage(),
-            'firstItem' => $purchase_orders->firstItem(),
-            'getOptions' => $purchase_orders->getOptions(),
-            'hasPages' => $purchase_orders->hasPages(),
-            'items' => $purchase_orders->items(),
-            'lastItem' => $purchase_orders->lastItem(),
-            'lastPage' => $purchase_orders->lastPage(),
-            'nextPageUrl' => $purchase_orders->nextPageUrl(),
-            'perPage' => $purchase_orders->perPage(),
-            'total' => $purchase_orders->total(),
-            'getPageName' => $purchase_orders->getPageName(),
-            'data' => $purchase_orders->map(function ($purchase) {
-                return [
-                    'id' => $purchase->id,
-                    'supplier_name' => isset($purchase->supplier) && $purchase->supplier->name ? $purchase->supplier->name : '',
-                    'supplier_company_name' => isset($purchase->supplier) && $purchase->supplier->name ? $purchase->supplier->name : '',
-                    'branch_name' => isset($purchase->branch) && $purchase->branch->name($this->lang_code) ? $purchase->branch->name($this->lang_code) : '',
-                    'code' => $purchase->code,
-                    'status_name' => $purchase->status_name($this->lang_code),
-                    'status_id' => $purchase->status_id,
+                    'type_id' => $purchase->type_id,
+                    'type_name' => $purchase->type_name,
                     'work_date' => $purchase->work_date ? date('d/m/Y H:i', strtotime($purchase->work_date)) : '',
                 ];
             })
@@ -1839,7 +1798,7 @@ class WarehouseController extends Controller
         $purchase_order->notes = $request->get('notes');
         $purchase_order->work_date = $request->work_date;
         $purchase_order->created_by_name = $this->vendor_name;
-        $purchase_order->type_id = 0;
+        $purchase_order->type_id = $request->type_id;
         $purchase_order->save();
 
         $msg = __('msg.stock_purchase_orders_created_success', [], $this->lang_code);
@@ -1849,7 +1808,7 @@ class WarehouseController extends Controller
 
     public function updateStockPurchaseOrders(Request $request)
     {
-        $purchase_order = StockPurchaseOrders::where('vendor_id', $this->vendor_id)->where('id', $request->get('purchase_order_id'))->first();
+        $purchase_order = StockPurchaseOrders::where('vendor_id', $this->vendor_id)->where('id', $request->purchase_order_id)->first();
         if (!$purchase_order)
             return $this->errorResponse(__('msg.stock_purchase_order_not_found', [], $this->lang_code), 400);
         if ($request->get('supplier_id'))
@@ -1864,6 +1823,8 @@ class WarehouseController extends Controller
             $purchase_order->work_date = $request->get('work_date');
         if ($request->get('notes'))
             $purchase_order->notes = $request->get('notes');
+        if ($request->get('type_id'))
+            $purchase_order->type_id = $request->get('type_id');
         $purchase_order->save();
 
         $msg = __('msg.stock_purchase_orders_updated_success', [], $this->lang_code);
@@ -1873,7 +1834,7 @@ class WarehouseController extends Controller
 
     public function StockPurchaseOrderDetails(Request $request)
     {
-        $purchase = StockPurchaseOrders::where('vendor_id', $this->vendor_id)->where('id', $request->get('purchase_order_id'))->first();
+        $purchase = StockPurchaseOrders::where('vendor_id', $this->vendor_id)->where('id', $request->purchase_order_id)->first();
         if (!$purchase)
             return $this->errorResponse(__('msg.stock_purchase_order_not_found', [], $this->lang_code), 400);
 
@@ -1887,6 +1848,8 @@ class WarehouseController extends Controller
             'notes' => $purchase->notes,
             'created_by_name' => $purchase->created_by_name,
             'extra_price' => $purchase->extra_price,
+            'type_id' => $purchase->type_id,
+            'type_name' => $purchase->type_name,
             'status_name' => $purchase->status_name($this->lang_code),
             'work_date' => $purchase->work_date ? date('d/m/Y H:i', strtotime($purchase->work_date)) : '',
             'delivery_date' => $purchase->delivery_date ? date('d/m/Y H:i', strtotime($purchase->delivery_date)) : '',
@@ -1898,9 +1861,9 @@ class WarehouseController extends Controller
                     'qty' => (float)$material->qty,
                     'price' => (float)$material->price,
                     'stock_qty' => 0,
-                    'stock_name' => $material->stock->name,
-                    'stock_code' => $material->stock->code,
-                    'stock_price' => $material->stock->amount,
+                    'stock_name' => isset($material->stock) ? $material->stock->name : '',
+                    'stock_code' => isset($material->stock) ? $material->stock->code : '',
+                    'stock_price' => isset($material->stock) ? $material->stock->amount : '',
                 ];
             }) : []
         ];
@@ -1923,63 +1886,45 @@ class WarehouseController extends Controller
         return $this->dataResponse('generated successfully', $data);
     }
 
-    public function StockPurchaseOrderChangeStatusSent(Request $request)
+    public function StockPurchaseOrderChangeStatus(Request $request)
     {
+        $validator = Validator::make($request->all(), [
+            'status_id' => 'required',
+        ]);
+
+        if ($validator->fails())
+            return $this->errorResponse($validator->errors()->first(), 400);
+
         $purchase = StockPurchaseOrders::where('vendor_id', $this->vendor_id)
-            ->where('id', $request->get('purchase_order_id'))->where('status_id', '!=', 1)->first();
+            ->where('id', $request->purchase_order_id)->first();
         if (!$purchase)
             return $this->errorResponse(__('msg.stock_purchase_order_not_found', [], $this->lang_code), 400);
-        $purchase->status_id = 1;
+
+        $purchase->status_id = $request->status_id;
         $purchase->save();
-
-        $msg = __('msg.stock_purchase_orders_updated_success', [], $this->lang_code);
-
-        return $this->successResponse($msg, 200);
-    }
-
-    public function StockPurchaseOrderChangeStatusCanel(Request $request)
-    {
-        $purchase = StockPurchaseOrders::where('vendor_id', $this->vendor_id)
-            ->where('id', $request->get('purchase_order_id'))->where('status_id', '!=', 3)->first();
-        if (!$purchase)
-            return $this->errorResponse(__('msg.stock_purchase_order_not_found', [], $this->lang_code), 400);
-        $purchase->status_id = 3;
-        $purchase->save();
-
-        $msg = __('msg.stock_purchase_orders_updated_success', [], $this->lang_code);
-
-        return $this->successResponse($msg, 200);
-    }
-
-    public function StockPurchaseOrderChangeStatusClose(Request $request)
-    {
-        $purchase = StockPurchaseOrders::where('vendor_id', $this->vendor_id)
-            ->where('id', $request->get('purchase_order_id'))->where('status_id', '!=', 2)->first();
-        if (!$purchase)
-            return $this->errorResponse(__('msg.stock_purchase_order_not_found', [], $this->lang_code), 400);
-        $purchase->status_id = 2;
-        $purchase->save();
-
-        $last_item_id = 0;
-        $last_item = StockPurchase::where('vendor_id', $this->vendor_id)->orderBy('id', 'DESC')->first();
-        if ($last_item) {
-            $num = explode('-', $last_item->code);
-            $last_item_id = $num[1];
+        if ($request->status_id == 2){
+            $last_item_id = 0;
+            $last_item = StockPurchase::where('vendor_id', $this->vendor_id)->orderBy('id', 'DESC')->first();
+            if ($last_item) {
+                $num = explode('-', $last_item->code);
+                $last_item_id = $num[1];
+            }
+            $stock_purch = new StockPurchase();
+            $stock_purch->vendor_id = $this->vendor_id;
+            $stock_purch->created_by_name = $this->vendor_name;
+            $stock_purch->sender_by_name = $this->vendor_name;
+            $stock_purch->code = 'PUR-' . str_pad($last_item_id + 1, 3, "0", STR_PAD_LEFT);
+            $stock_purch->supplier_id = $purchase->supplier_id;
+            $stock_purch->branch_id = $purchase->branch_id;
+            $stock_purch->extra_price = $purchase->extra_price;
+            $stock_purch->save();
         }
-        $stock_purch = new StockPurchase();
-        $stock_purch->vendor_id = $this->vendor_id;
-        $stock_purch->created_by_name = $this->vendor_name;
-        $stock_purch->sender_by_name = $this->vendor_name;
-        $stock_purch->code = 'PUR-' . str_pad($last_item_id + 1, 3, "0", STR_PAD_LEFT);
-        $stock_purch->supplier_id = $purchase->supplier_id;
-        $stock_purch->branch_id = $purchase->branch_id;
-        $stock_purch->extra_price = $purchase->extra_price;
-        $stock_purch->save();
-
         $msg = __('msg.stock_purchase_orders_updated_success', [], $this->lang_code);
 
         return $this->successResponse($msg, 200);
     }
+
+
 
     public function addStockPurchaseOrderStockMaterial(Request $request)
     {
@@ -3129,7 +3074,7 @@ class WarehouseController extends Controller
                 'id' => $item->id,
                 'code' => $item->code,
                 'branch_id' => $item->branch_id,
-                'branch_name' => $item->branch->name($this->lang_code),
+                'branch_name' => isset($item->branch) && $item->branch->name($this->lang_code) ? $item->branch->name($this->lang_code) : '',
                 'work_date' => date('d/m/Y H:i', strtotime($item->work_date)),
                 'created_at' => date('d/m/Y H:i', strtotime($item->created_at)),
             ];
@@ -3345,7 +3290,7 @@ class WarehouseController extends Controller
             'creator' => $stock_check->creator,
             'amount' => $stock_check->amount,
             'branch_id' => $stock_check->branch_id,
-            'branch_name' => $stock_check->branch->name($this->lang_code) ?? '',
+            'branch_name' => isset($stock_check->branch) && $stock_check->branch->name($this->lang_code) ? $stock_check->branch->name($this->lang_code) : '',
             'work_date' => date('d/m/Y H:i', strtotime($stock_check->work_date)),
             'created_at' => date('d/m/Y H:i', strtotime($stock_check->created_at)),
             'sender_date' => date('d/m/Y H:i', strtotime($stock_check->sender_date)),

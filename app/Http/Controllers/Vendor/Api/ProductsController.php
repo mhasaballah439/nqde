@@ -543,7 +543,7 @@ class ProductsController extends Controller
             'active_branches' => isset($product->active_branches) && count($product->active_branches) > 0 ? $product->active_branches->map(function ($branch) {
                 return [
                     'branch_id' => $branch->branch_id,
-                    'branch_name' => $branch->branch->name($this->lang_code),
+                    'branch_name' => isset($branch->branch) && $branch->branch->name($this->lang_code) ? $branch->branch->name($this->lang_code) : '',
                     'active' => $branch->active,
                     'price' => $branch->price,
                 ];
@@ -551,7 +551,7 @@ class ProductsController extends Controller
             'deactive_branches' => isset($product->deactive_branches) && count($product->deactive_branches) > 0 ? $product->deactive_branches->map(function ($branch) {
                 return [
                     'branch_id' => $branch->branch_id,
-                    'branch_name' => $branch->branch->name($this->lang_code),
+                    'branch_name' => isset($branch->branch) && $branch->branch->name($this->lang_code) ? $branch->branch->name($this->lang_code) : '',
                     'active' => $branch->active,
                     'price' => $branch->price,
                 ];
@@ -2193,7 +2193,7 @@ class ProductsController extends Controller
             'name' => $gift_card->name($this->lang_code),
             'code' => $gift_card->code,
             'category_id' => $gift_card->category_id,
-            'category_name' => $gift_card->category->name($this->lang_code) ?? '',
+            'category_name' => isset($gift_card->category) && $gift_card->category->name($this->lang_code) ? $gift_card->category->name($this->lang_code) : '',
             'cost_calculation_method' => $gift_card->cost_calculation_method,
             'active' => $gift_card->active,
             'gift_card_number' => $gift_card->gift_card_number,

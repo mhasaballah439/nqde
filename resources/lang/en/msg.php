@@ -265,5 +265,6 @@ return [
     'supplier_restore_success' => 'supplier restore success',
     'stocks_restore_success' => 'stocks restore success',
     'delivery' => 'Delivery',
+    'pending' => 'Pending',
     'inside_place' => 'Inside place',
 ];

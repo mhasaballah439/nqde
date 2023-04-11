@@ -1913,6 +1913,29 @@ class AdminstarionController extends Controller
         return $this->successResponse($msg, 200);
     }
 
+    public function couponDetails(Request $request)
+    {
+        $coupon = VendorCoupon::where('vendor_id', $this->vendor_id)->where('id', $request->coupon_id)->first();
+        if (!$coupon)
+            return $this->errorResponse(__('msg.coupon_not_found', [], $this->lang_code), 400);
+
+        $data = [
+            'id' => $coupon->id,
+            'code' => $coupon->code,
+            'discount' => $coupon->discount,
+            'active' => $coupon->active,
+            'limit_number' => $coupon->limit_number,
+            'start_date' => $coupon->start_date,
+            'end_date' => $coupon->end_date,
+            'days' => $coupon->days,
+            'name' => $coupon->name($this->lang_code),
+        ];
+
+        $msg = __('msg.coupon_get_success', [], $this->lang_code);
+
+        return $this->dataResponse($msg,$data, 200);
+    }
+
     public function deleteCoupon(Request $request)
     {
         $coupon = VendorCoupon::where('vendor_id', $this->vendor_id)->where('id', $request->coupon_id)->first();
@@ -2449,7 +2472,7 @@ class AdminstarionController extends Controller
         $shift->name_en = $request->name_en;
         $shift->branches = $request->branches;
         $shift->users = $request->users;
-        $shift->days = json_encode($request->days);
+        $shift->days = $request->days;
         $shift->code = 'VSH-' . str_pad($last_item_id + 1, 5, "0", STR_PAD_LEFT);
         $shift->save();
 
@@ -2469,7 +2492,7 @@ class AdminstarionController extends Controller
         if ($validator->fails())
             return $this->errorResponse($validator->errors()->first(), 400);
 
-        $shift = VendorWorkShift::where('vendor_id', $this->vendor_id)->where('id', $request->shift_id)->first();
+        $shift = VendorWorkShift::where('id', $request->shift_id)->first();
         if (!$shift)
             return $this->errorResponse(__('msg.shift_not_found', [], $this->lang_code), 400);
 
@@ -2482,12 +2505,48 @@ class AdminstarionController extends Controller
         if ($request->users)
             $shift->users = $request->users;
         if ($request->days)
-            $shift->days = json_encode($request->days);
+            $shift->days = $request->days;
         $shift->save();
 
         $msg = __('msg.shifts_updated_success', [], $this->lang_code);
 
         return $this->successResponse($msg, 200);
+    }
+
+    public function shiftDetails(Request $request)
+    {
+
+        $shift = VendorWorkShift::where('id', $request->shift_id)->first();
+        if (!$shift)
+            return $this->errorResponse(__('msg.shift_not_found', [], $this->lang_code), 400);
+
+        $branches = 0;
+        $users = 0;
+        if (is_array($shift->branches))
+            $branches = count($shift->branches);
+        else
+            $branches = count(json_decode($shift->branches));
+
+        if (is_array($shift->users))
+            $branches = count($shift->users);
+        else
+            $branches = count(json_decode($shift->branches));
+
+        $days = $shift->days ? json_decode($shift->days) : [];
+
+        $data = [
+            'id' => $shift->id,
+            'name' => $shift->name($this->lang_code),
+            'code' => $shift->code,
+            'branches' => $branches,
+            'users' => $users,
+            'created_at' => date('d/m/Y', strtotime($shift->created_at)),
+            'days' => $days,
+        ];
+
+        $msg = __('msg.shifts_get_success', [], $this->lang_code);
+
+        return $this->dataResponse($msg,$data, 200);
     }
 
     public function deleteShift(Request $request)
@@ -3072,11 +3131,11 @@ class AdminstarionController extends Controller
 
         $devices = VendorDevice::where('vendor_id', $this->vendor_id);
         if ($name)
-            $devices = $devices->where('name', 'LIKE', $name);
+            $devices = $devices->where('name', 'LIKE','%'.$name.'%');
         if ($code)
-            $devices = $devices->where('code', 'LIKE', $code);
+            $devices = $devices->where('code', 'LIKE', '%'.$code.'%');
         if ($device_number)
-            $devices = $devices->where('device_number', 'LIKE', $device_number);
+            $devices = $devices->where('device_number', 'LIKE', '%'.$device_number.'%');
         if ($tags)
             $devices = $devices->whereHas('tags', function ($q) use ($tags) {
                 $q->whereIn('id', $tags);
@@ -3094,7 +3153,7 @@ class AdminstarionController extends Controller
                 'device_number' => $device->device_number,
                 'code' => $device->code,
                 'type' => $device->type->name ?? '',
-                'branch' => $device->branch->name($this->lang_code) ?? '',
+                'branch' => isset($device->branch) && $device->branch->name($this->lang_code) ? $device->branch->name($this->lang_code) : '',
                 'status_name' => $device->status_name,
             ];
         });
@@ -3117,6 +3176,17 @@ class AdminstarionController extends Controller
         ];
         return $this->dataResponse('generated successfully', $data);
     }
+    public function genrateDeviceNumber()
+    {
+        do {
+            $code = rand(111111,999999);
+            $data = VendorDevice::where('vendor_id',$this->vendor_id)->where('device_number', $code)->first();
+            if (!$data) return $this->dataResponse('generated successfully', $code);;
+        } while (true);
+
+
+    }
+
 
     public function createDevice(Request $request)
     {
@@ -3124,7 +3194,6 @@ class AdminstarionController extends Controller
             'type_id' => 'required',
             'branch_id' => 'required',
             'name' => 'required',
-            'device_number' => 'required|unique:vendor_devices',
         ]);
 
         if ($validator->fails())
@@ -3136,6 +3205,7 @@ class AdminstarionController extends Controller
             $num = explode('-', $last_item->code);
             $last_item_id = $num[1];
         }
+
 
         $device = new VendorDevice();
         $device->vendor_id = $this->vendor_id;
@@ -3156,9 +3226,7 @@ class AdminstarionController extends Controller
     public function updateDevice(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'type_id' => 'required',
-            'branch_id' => 'required',
-            'name' => 'required',
+            'device_id' => 'required',
         ]);
 
         if ($validator->fails())
@@ -3201,7 +3269,7 @@ class AdminstarionController extends Controller
         $device = VendorDevice::where('vendor_id', $this->vendor_id)->where('id', $request->device_id)->first();
         if (!$device)
             return $this->errorResponse(__('msg.device_not_found', [], $this->lang_code), 400);
-
+        $last_order = isset($device->orders) && count($device->orders) > 0 ? $device->orders()->orderBy('id','DESC')->first() : null;
         $data = [
             'id' => $device->id,
             'name' => $device->name,
@@ -3209,12 +3277,18 @@ class AdminstarionController extends Controller
             'code' => $device->code,
             'type_id' => $device->type_id,
             'branch_id' => $device->branch_id,
+            'branch' => isset($device->branch) ? $device->branch : [],
             'status_id' => $device->status_id,
+            'last_sync' => $device->last_sync,
+            'last_login' => $device->last_login,
+            'last_internet_connection' => $device->last_internet_connection,
             'active' => $device->active,
             'device_model' => $device->device_model,
             'app_verstion' => $device->app_verstion,
             'associated_device_verstion' => $device->associated_device_verstion,
+            'associated_device_model' => $device->associated_device_model,
             'res_orders_internet' => $device->res_orders_internet,
+            'last_order' => $last_order ? date('d/m/Y H:i',strtotime($last_order->created_at)) : '',
             'tags' => isset($device->tags) && count($device->tags) > 0 ? $device->tags->map(function ($tag) {
                 return [
                     'id' => $tag->id,
@@ -3244,13 +3318,7 @@ class AdminstarionController extends Controller
 
     public function addDeviceTags(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'tags' => 'required',
-            'device_id' => 'required',
-        ]);
 
-        if ($validator->fails())
-            return $this->errorResponse($validator->errors()->first(), 400);
         $tags = $request->tags;
         if (!is_array($request->tags))
             $tags = json_decode($request->tags);
@@ -3258,36 +3326,18 @@ class AdminstarionController extends Controller
             foreach ($tags as $tag) {
                 $device_tag = DeviceTags::where('device_id', $request->device_id)
                     ->where('tag_id', $tag)->first();
-                if (!$device_tag)
+                if ($device_tag){
+                    $device_tag->delete();
+                }else{
                     $device_tag = new DeviceTags();
-                $device_tag->device_id = $request->device_id;
-                $device_tag->tag_id = $tag;
-                $device_tag->save();
+                    $device_tag->device_id = $request->device_id;
+                    $device_tag->tag_id = $tag;
+                    $device_tag->save();
+                }
             }
         }
 
         $msg = __('msg.tags_add_success', [], $this->lang_code);
-
-        return $this->successResponse($msg, 200);
-    }
-
-    public function deleteDeviceTags(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'tag_id' => 'required',
-            'device_id' => 'required',
-
-        ]);
-
-        if ($validator->fails())
-            return $this->errorResponse($validator->errors()->first(), 400);
-        $device_tag = DeviceTags::where('device_id', $request->device_id)
-            ->where('tag_id', $request->tag_id)->first();
-        if (!$device_tag)
-            return $this->errorResponse(__('msg.tag_not_found', [], $this->lang_code), 400);
-
-        $device_tag->delete();
-        $msg = __('msg.tag_deleted_success', [], $this->lang_code);
 
         return $this->successResponse($msg, 200);
     }
@@ -3924,7 +3974,7 @@ class AdminstarionController extends Controller
         if (!$vendor_setting)
             $vendor_setting = new VendorSetting();
 
-        $vendor_setting->vendor_id = $request->vendor_id;
+        $vendor_setting->vendor_id = $this->vendor_id;
         if ($request->country_id)
             $vendor_setting->country_id = $request->country_id;
         if ($request->currency_id)
@@ -4504,4 +4554,6 @@ class AdminstarionController extends Controller
             if (!$data) return $code;
         } while (true);
     }
+
+
 }

@@ -87,6 +87,7 @@ Route::group(['middleware' => 'JwtMiddleware','prefix' => 'vendor/v1'],function 
     Route::post('stocks-list-delete',[WarehouseController::class,'stocksListDelete']);
     Route::post('stocks-restore-deleted',[WarehouseController::class,'stocksRestoreDeleted']);
     Route::post('stocks-restore-single-deleted',[WarehouseController::class,'stocksRestoreSingleDeleted']);
+    Route::post('stocks-force-delete',[WarehouseController::class,'stocksForceDeleted']);
     Route::post('stocks-add-suppliers',[WarehouseController::class,'stocksAddSuppliers']);
     Route::post('stocks-delete-suppliers',[WarehouseController::class,'stocksDeleteSuppliers']);
     Route::post('stocks-add-storehouse',[WarehouseController::class,'stocksAddStorehouse']);
@@ -107,6 +108,7 @@ Route::group(['middleware' => 'JwtMiddleware','prefix' => 'vendor/v1'],function 
     Route::post('supplier-list-delete',[WarehouseController::class,'supplierListDelete']);
     Route::post('supplier-restore-deleted',[WarehouseController::class,'supplierRestoreDeleted']);
     Route::post('supplier-restore-single-deleted',[WarehouseController::class,'supplierRestoreSingleDeleted']);
+    Route::post('supplier-force-delete',[WarehouseController::class,'supplierForceDelete']);
     Route::post('add-suppliers-stocks',[WarehouseController::class,'addSuppliersStocks']);
     Route::post('delete-suppliers-stocks',[WarehouseController::class,'deleteSuppliersStocks']);
     Route::get('generate-supplier-code',[WarehouseController::class,'generateSupplierCode']);
@@ -186,14 +188,11 @@ Route::group(['middleware' => 'JwtMiddleware','prefix' => 'vendor/v1'],function 
     ######################## stock purchases orders ##########################
     Route::get('generate-stock-purchase-orders-code',[WarehouseController::class,'generateStokPurchaseOrdersCode']);
     Route::post('stock-purchase-orders',[WarehouseController::class,'stockPurchaseOrders']);
-    Route::post('stock-purchase-warehouse-orders',[WarehouseController::class,'stockPurchaseWarehouseOrders']);
     Route::post('create-stock-purchase-orders',[WarehouseController::class,'createStockPurchaseOrders']);
     Route::post('update-stock-purchase-orders',[WarehouseController::class,'updateStockPurchaseOrders']);
     Route::post('stock-purchase-order-details',[WarehouseController::class,'StockPurchaseOrderDetails']);
     Route::get('generate-stok-purchase-code',[WarehouseController::class,'generateStokPurchaseCode']);
-    Route::post('stock-purchase-order-change-status-sent',[WarehouseController::class,'StockPurchaseOrderChangeStatusSent']);
-    Route::post('stock-purchase-order-change-status-cancel',[WarehouseController::class,'StockPurchaseOrderChangeStatusCanel']);
-    Route::post('stock-purchase-order-change-status-close',[WarehouseController::class,'StockPurchaseOrderChangeStatusClose']);
+    Route::post('stock-purchase-order-change-status',[WarehouseController::class,'StockPurchaseOrderChangeStatus']);
     Route::post('add-purchase-order-stock-material',[WarehouseController::class,'addStockPurchaseOrderStockMaterial']);
     Route::post('update-purchase-order-material-qty',[WarehouseController::class,'updatePurchaseOrderStockMaterialQty']);
     Route::post('stock-purchase-orders-delete-list',[WarehouseController::class,'stockPurchaseOrderDeleteList']);
@@ -413,6 +412,7 @@ Route::group(['middleware' => 'JwtMiddleware','prefix' => 'vendor/v1'],function 
     Route::post('create-coupon',[AdminstarionController::class,'createCoupon']);
     Route::post('update-coupon',[AdminstarionController::class,'updateCoupon']);
     Route::post('delete-coupon',[AdminstarionController::class,'deleteCoupon']);
+    Route::post('coupon-details',[AdminstarionController::class,'couponDetails']);
     Route::post('coupons-delete-list',[AdminstarionController::class,'couponsDeleteList']);
     Route::post('coupons-restore-list',[AdminstarionController::class,'couponsRestoreList']);
     Route::post('coupons-restore-single-item',[AdminstarionController::class,'couponsRestoreSingleItem']);
@@ -436,6 +436,7 @@ Route::group(['middleware' => 'JwtMiddleware','prefix' => 'vendor/v1'],function 
     Route::get('generate-shift-code',[AdminstarionController::class,'generateShiftCode']);
     Route::post('create-shift',[AdminstarionController::class,'createShift']);
     Route::post('update-shift',[AdminstarionController::class,'updateShift']);
+    Route::post('shift-details',[AdminstarionController::class,'shiftDetails']);
     Route::post('delete-shift',[AdminstarionController::class,'deleteShift']);
     Route::post('shifts-delete-list',[AdminstarionController::class,'shiftsDeleteList']);
     ################## temporary events ####################
@@ -463,12 +464,12 @@ Route::group(['middleware' => 'JwtMiddleware','prefix' => 'vendor/v1'],function 
     Route::get('device-types',[AdminstarionController::class,'getDeviceTypes']);
     Route::post('devices',[AdminstarionController::class,'devices']);
     Route::get('generate-device-code',[AdminstarionController::class,'generateDeviceCode']);
+    Route::get('generate-device-number',[AdminstarionController::class,'genrateDeviceNumber']);
     Route::post('create-device',[AdminstarionController::class,'createDevice']);
     Route::post('update-device',[AdminstarionController::class,'updateDevice']);
     Route::post('device-details',[AdminstarionController::class,'deviceDetails']);
     Route::post('delete-device',[AdminstarionController::class,'deleteDevice']);
     Route::post('add-device-tags',[AdminstarionController::class,'addDeviceTags']);
-    Route::post('delete-device-tags',[AdminstarionController::class,'deleteDeviceTags']);
     Route::post('add-cashier-device-setting',[AdminstarionController::class,'addCashierDevice']);
     #################### payment methods ##################3
     Route::get('payment-method',[AdminstarionController::class,'getPaymentMethod']);

@@ -23,6 +23,9 @@ class VendorDevice extends Model
         return $this->belongsTo(Branch::class,'branch_id');
     }
 
+    public function orders(){
+        return $this->hasMany(Order::class,'device_id');
+    }
     public function casher_device(){
         return $this->belongsTo(VendorCasherDevice::class,'device_id');
     }

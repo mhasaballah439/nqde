@@ -30,11 +30,25 @@ class StockPurchaseOrders extends Model
             case 0:
                 return __('msg.draft',[],$lang);
             case 1:
-                return __('msg.sent',[],$lang);
+                return __('msg.pending',[],$lang);
             case 2:
                 return __('msg.closed',[],$lang);
             case 3:
                 return __('msg.canceled',[],$lang);
+        }
+    }
+
+    public function getTypeNameAttribute()
+    {
+        switch ($this->type_id) {
+            case 1:
+                return __('msg.branch_to_branch');
+            case 2:
+                return __('msg.branch_to_store_house');
+            case 3:
+                return __('msg.store_house_to_branch');
+            case 4:
+                return __('msg.store_house_to_store_house');
         }
     }
 
